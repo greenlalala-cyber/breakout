@@ -1,0 +1,72 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"/>
+  <title>打磚塊 Plus</title>
+  <link rel="stylesheet" href="./style.css"/>
+  <script src="./game.modified.js" defer></script>
+</head>
+<body>
+  <div class="app">
+    <section class="card">
+      <div class="header">
+        <div class="title">
+          <div>打磚塊 Plus</div>
+          <small>雷射板 / 道具堆疊 UI / 隨機不滿版關卡 / 爆炸特效 / 音效</small>
+        </div>
+        <div class="hud">
+          <div class="pill">分數 <b id="score">0</b></div>
+          <div class="pill">生命 <b id="lives">3</b></div>
+          <div class="pill">關卡 <b id="level">1</b></div>
+          <button class="btn secondary" id="btnSound">音效：開</button>
+          <button class="btn secondary" id="btnPause">暫停 P</button>
+          <button class="btn danger" id="btnReset">重來</button>
+        </div>
+      </div>
+
+      <div class="wrap">
+        <div class="stage" id="stage">
+          <canvas id="game"></canvas>
+          <div class="toast" id="toast">PAUSED</div>
+          <div class="effectsUI" id="effectsUI"></div>
+        </div>
+
+        <div class="controls">
+          <button class="btn" id="btnLeft">← 左</button>
+          <button class="btn" id="btnLaunch">發射 / 開始</button>
+          <button class="btn" id="btnRight">右 →</button>
+          <button class="btn" id="btnShoot">射擊</button>
+          <button class="btn secondary" id="btnSpeedUp">加速</button>
+          <button class="btn secondary" id="btnSpeedDown">減速</button>
+        </div>
+
+        <div class="legend">
+          <span class="tag">磚：普通 / 硬磚 / 移動磚（最上排永遠空、排列不滿版）</span>
+        </div>
+
+        <div class="secretRow" aria-label="秘密功能設定">
+          <label class="secretLabel">
+            <input type="checkbox" id="secretEnable" />
+            <span class="checkUI" aria-hidden="true"></span>
+            <span class="secretText">秘密功能</span>
+          </label>
+          <span class="secretNote" id="secretNote">（勾選後才可使用）</span>
+        </div>
+
+        <!-- ✅ 道具設定：勾選 + 機率(權重%) -->
+        <div class="powerRow" aria-label="道具出現設定">
+          <div class="powerTitle">道具出現：</div>
+          <div class="powerChecks" id="powerChecks"></div>
+          <div class="powerHint">（取消勾選＝不會出現；機率%＝權重）</div>
+        </div>
+      </div>
+
+      <div class="help">
+        電腦：<code>←</code><code>→</code>或<code>A</code><code>D</code>移動、<code>W</code>/<code>空白</code>發射、<code>S</code>/<code>X</code>射擊、<code>P</code>暫停。<br/>
+        手機/平板：拖曳移動板子；或用左右鍵。點「發射/開始」開球；點「射擊」開火（雷射生效時也會自動連射）。
+      </div>
+    </section>
+  </div>
+</body>
+</html>
