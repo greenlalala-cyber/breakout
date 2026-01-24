@@ -1,272 +1,104 @@
-:root{
-  --bg:#cfe9ff;
-  --bg2:#e9f6ff;
-  --panel:#0f2f55;
-  --text:#eaf4ff;
-  --muted:#bfe0ff;
-  --btn:#163a66; --btn2:#1f4b86; --danger:#ff4f6d;
-
-  --rewindBg1:#fff6bf;
-  --rewindBg2:#fffde6;
-}
-*{box-sizing:border-box}
-body{
-  margin:0; min-height:100svh; display:grid; place-items:center; padding:16px;
-  font-family:system-ui,-apple-system,"Segoe UI",Roboto,"Noto Sans TC",Arial,sans-serif;
-  color:var(--text);
-  background:
-    radial-gradient(1100px 700px at 18% 12%, #ffffff 0%, var(--bg2) 35%, var(--bg) 70%),
-    radial-gradient(900px 600px at 85% 25%, #d7f1ff 0%, var(--bg) 65%),
-    linear-gradient(180deg, var(--bg2), var(--bg));
-}
-body.rewinding{
-  background:
-    radial-gradient(1100px 700px at 18% 12%, #ffffff 0%, var(--rewindBg2) 38%, var(--rewindBg1) 72%),
-    radial-gradient(900px 600px at 85% 25%, #fff7cc 0%, var(--rewindBg1) 70%),
-    linear-gradient(180deg, var(--rewindBg2), var(--rewindBg1));
+/* =========================
+   基本 Reset
+========================= */
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
 }
 
-.app{ width:min(1020px,100%); display:grid; gap:12px; }
-.card{
-  background: color-mix(in srgb, var(--panel) 86%, black 14%);
-  border:1px solid rgba(255,255,255,.16);
-  border-radius:16px;
-  box-shadow:0 12px 40px rgba(0,0,0,.28);
-  overflow:hidden;
-}
-.header{
-  padding:14px 16px; display:flex; justify-content:space-between; gap:12px; flex-wrap:wrap;
-  border-bottom:1px solid rgba(255,255,255,.12);
-  align-items:center;
-}
-.title{ font-weight:900; letter-spacing:.5px; display:flex; flex-direction:column; gap:2px; }
-.title small{ color:var(--muted); font-weight:800; }
-.hud{ display:flex; gap:10px; align-items:center; flex-wrap:wrap; justify-content:flex-end; }
-.pill{
-  padding:8px 10px; border-radius:999px;
-  background: rgba(255,255,255,.08);
-  border:1px solid rgba(255,255,255,.14);
-  font-weight:850; font-size:14px;
-}
-.pill b{ font-weight:950; }
-
-.btn{
-  appearance:none; border:none; cursor:pointer; user-select:none; touch-action:manipulation;
-  background: linear-gradient(180deg, var(--btn2), var(--btn));
-  color:var(--text); padding:10px 12px; border-radius:12px;
-  font-weight:950; border:1px solid rgba(255,255,255,.16);
-  box-shadow:0 6px 18px rgba(0,0,0,.22);
-}
-.btn:active{ transform: translateY(1px); }
-.btn.secondary{ background: rgba(255,255,255,.10); box-shadow:none; }
-.btn.danger{ background: linear-gradient(180deg, #ff6b84, var(--danger)); }
-
-.wrap{ padding:14px; display:grid; gap:12px; }
-
-.stage{
-  border-radius:16px; overflow:hidden;
-  border:1px solid rgba(255,255,255,.16);
-  background: rgba(255,255,255,.18);
-  position:relative;
-  aspect-ratio: 16 / 9;
-  min-height: 260px;
-}
-canvas{ width:100%; height:100%; display:block; }
-
-.toast{
-  position:absolute; inset:12px 12px auto 12px;
-  padding:10px 12px; border-radius:12px;
-  background: rgba(0,0,0,.40);
-  border:1px solid rgba(255,255,255,.16);
-  font-weight:950; backdrop-filter: blur(8px);
-  display:none;
-}
-.toast.show{ display:block; }
-
-.effectsUI{
-  position:absolute;
-  inset:12px 12px auto auto;
-  width:min(260px, 52vw);
-  display:flex;
-  flex-direction:column;
-  gap:8px;
-  pointer-events:none;
-}
-.effItem{
-  background: rgba(0,0,0,.28);
-  border:1px solid rgba(255,255,255,.16);
-  border-radius:12px;
-  padding:8px 10px;
-  backdrop-filter: blur(8px);
-}
-.effTop{
-  display:flex;
-  align-items:center;
-  justify-content:space-between;
-  gap:8px;
-  font-weight:950;
-  font-size:12px;
-  color: rgba(232,238,255,.92);
-}
-.bar{
-  margin-top:6px;
-  height:6px;
-  border-radius:999px;
-  background: rgba(255,255,255,.12);
-  overflow:hidden;
+html, body {
+  width: 100%;
+  height: 100%;
+  background: #000;
+  overflow: hidden;
+  font-family: "Arial Black", Arial, sans-serif;
+  user-select: none;
 }
 
-.controls{
-  display:grid; grid-template-columns: 1fr 1fr 1fr; gap:10px;
-}
-@media (min-width: 840px){
-  .controls{ grid-template-columns: 1fr 1fr 1fr 1fr 1fr 1fr; }
-}
-
-.legend{
-  display:flex; flex-wrap:wrap; gap:8px;
-  margin-top:4px;
-  color: rgba(234,244,255,.86);
-  font-weight:850; font-size:12px;
-}
-.tag{ padding:6px 8px; border-radius:999px; background: rgba(255,255,255,.10); border:1px solid rgba(255,255,255,.14); }
-
-/* 勾選區 */
-.secretRow, .powerRow{
-  display:flex;
-  align-items:flex-start;
-  gap:10px;
-  margin-top:6px;
-  padding:10px 12px;
-  border-radius:14px;
-  background: rgba(255,255,255,.08);
-  border:1px solid rgba(255,255,255,.14);
-}
-.secretLabel, .powerLabel{
-  display:flex;
-  align-items:center;
-  gap:10px;
-  cursor:pointer;
-  user-select:none;
-  font-weight:950;
-}
-.secretLabel input, .powerLabel input[type="checkbox"]{
-  position:absolute;
-  opacity:0;
-  pointer-events:none;
-}
-.checkUI{
-  width:22px;
-  height:22px;
-  border-radius:6px;
-  background: rgba(0,0,0,.18);
-  border:1px solid rgba(255,255,255,.20);
-  display:grid;
-  place-items:center;
-  box-shadow: inset 0 0 0 1px rgba(0,0,0,.08);
-}
-.secretLabel input:checked + .checkUI,
-.powerLabel input[type="checkbox"]:checked + .checkUI{
-  background: rgba(255,255,255,.18);
-  border-color: rgba(255,255,255,.28);
-}
-.checkUI::after{
-  content:"";
-  width:10px;
-  height:18px;
-  border-right:4px solid rgba(0,0,0,.80);
-  border-bottom:4px solid rgba(0,0,0,.80);
-  transform: rotate(40deg) translate(-1px,-2px);
-  opacity:0;
-}
-.secretLabel input:checked + .checkUI::after,
-.powerLabel input[type="checkbox"]:checked + .checkUI::after{
-  opacity:1;
+/* =========================
+   遊戲容器
+========================= */
+#game-container {
+  position: relative;
+  width: 100vw;
+  height: 100vh;
 }
 
-.secretText{ color: rgba(234,244,255,.95); }
-.secretNote{
-  color: rgba(234,244,255,.78);
-  font-weight:900;
-  font-size:12px;
-  padding-top:2px;
+/* =========================
+   Canvas
+========================= */
+canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+  background: radial-gradient(circle at top, #111 0%, #000 70%);
 }
 
-/* 道具勾選列 */
-.powerRow{ align-items:flex-start; }
-.powerTitle{
-  font-weight:950;
-  color: rgba(234,244,255,.92);
-  white-space:nowrap;
-  padding-top:2px;
-}
-.powerChecks{
-  display:flex;
-  flex-wrap:wrap;
-  gap:10px 14px;
-  align-items:center;
-  flex:1;
-}
-.powerLabel{
-  background: rgba(0,0,0,.12);
-  border:1px solid rgba(255,255,255,.12);
-  padding:8px 10px;
-  border-radius:12px;
-}
-.powerName{
-  font-weight:950;
-  font-size:13px;
-  color: rgba(234,244,255,.92);
-  white-space:nowrap;
+/* =========================
+   通關特效層
+========================= */
+#level-clear-overlay {
+  position: absolute;
+  inset: 0;
+  display: none;              /* 平時隱藏 */
+  align-items: center;
+  justify-content: center;
+  flex-direction: column;
+  z-index: 10;
+  background: rgba(0, 0, 0, 0.55);
 }
 
-/* ✅ 機率輸入框 */
-.chanceWrap{
-  display:flex;
-  align-items:center;
-  gap:6px;
-  margin-left:6px;
-}
-.chanceInput{
-  width:62px;
-  padding:6px 8px;
-  border-radius:10px;
-  border:1px solid rgba(255,255,255,.18);
-  background: rgba(255,255,255,.12);
-  color: rgba(234,244,255,.95);
-  font-weight:950;
-  outline:none;
-}
-.chanceInput:disabled{
-  opacity:.45;
-}
-.percent{
-  font-weight:900;
-  color: rgba(234,244,255,.78);
-  font-size:12px;
+/* =========================
+   「通關!」大字
+========================= */
+#level-clear-text {
+  font-size: min(18vw, 180px);
+  color: #ffd700;
+  text-shadow:
+    0 0 20px #ffcc00,
+    0 0 40px #ff8800,
+    0 0 80px #ff6600;
+  animation: clearPop 0.8s ease-out forwards;
 }
 
-.powerHint{
-  font-weight:850;
-  font-size:12px;
-  color: rgba(234,244,255,.72);
-  padding-top:2px;
-}
-@media (max-width: 720px){
-  .powerRow{ flex-direction:column; }
-}
-
-.help{
-  padding:12px 16px;
-  border-top:1px solid rgba(255,255,255,.12);
-  color: rgba(234,244,255,.90);
-  line-height:1.6;
-}
-.help code{
-  background: rgba(255,255,255,.10);
-  border:1px solid rgba(255,255,255,.14);
-  padding:2px 6px;
-  border-radius:8px;
-  font-weight:900;
+/* =========================
+   提示文字
+========================= */
+#level-clear-hint {
+  margin-top: 20px;
+  font-size: min(4vw, 28px);
+  color: #ffffff;
+  opacity: 0.85;
+  letter-spacing: 2px;
 }
 
+/* =========================
+   動畫
+========================= */
+@keyframes clearPop {
+  0% {
+    transform: scale(0.3);
+    opacity: 0;
+  }
+  70% {
+    transform: scale(1.15);
+    opacity: 1;
+  }
+  100% {
+    transform: scale(1);
+  }
+}
+
+/* =========================
+   手機 / 平板優化
+========================= */
+@media (max-width: 768px) {
+  #level-clear-text {
+    font-size: 22vw;
+  }
+
+  #level-clear-hint {
+    font-size: 5vw;
+  }
+}
