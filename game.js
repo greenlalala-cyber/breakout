@@ -1,1783 +1,1314 @@
 (() => {
-  // ==============================
-  // Canvas / DPR
-  // ==============================
-  const stage = document.getElementById('stage');
+  'use strict';
+
+  // ========= DOM =========
   const canvas = document.getElementById('game');
-  const ctx = canvas.getContext('2d');
+  const ctx = canvas.getContext('2d', { alpha: false });
 
-  let DPR = 1;
-  function resizeCanvas(){
-    const r = stage.getBoundingClientRect();
-    DPR = Math.max(1, Math.min(2.5, window.devicePixelRatio || 1));
-    canvas.width = Math.floor(r.width * DPR);
-    canvas.height = Math.floor(r.height * DPR);
-    ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
-  }
-  window.addEventListener('resize', resizeCanvas, {passive:true});
-  resizeCanvas();
-
-  // ==============================
-  // UI
-  // ==============================
-  const scoreEl = document.getElementById('score');
-  const livesEl = document.getElementById('lives');
-  const levelEl = document.getElementById('level');
-  const toast = document.getElementById('toast');
+  const elScore = document.getElementById('score');
+  const elLives = document.getElementById('lives');
+  const elLevel = document.getElementById('level');
   const btnSound = document.getElementById('btnSound');
+  const soundState = document.getElementById('soundState');
+  const btnBgm = document.getElementById('btnBgm');
+  const bgmState = document.getElementById('bgmState');
+  const powerupRateInput = document.getElementById('powerupRate');
   const btnPause = document.getElementById('btnPause');
-  const btnReset = document.getElementById('btnReset');
-  const effectsUI = document.getElementById('effectsUI');
+  const btnRestart = document.getElementById('btnRestart');
 
-  const secretEnable = document.getElementById('secretEnable');
-  const secretNote = document.getElementById('secretNote');
+  const overlayClear = document.getElementById('overlayClear');
+  const overlayGameOver = document.getElementById('overlayGameOver');
 
-  const btnLeft = document.getElementById('btnLeft');
-  const btnRight = document.getElementById('btnRight');
-  const btnLaunch = document.getElementById('btnLaunch');
-  const btnShoot = document.getElementById('btnShoot');
-  const btnSpeedUp = document.getElementById('btnSpeedUp');
-  const btnSpeedDown = document.getElementById('btnSpeedDown');
+  // Mobile buttons
+  const mLeft = document.getElementById('mLeft');
+  const mRight = document.getElementById('mRight');
+  const mLaunch = document.getElementById('mLaunch');
+  const mLaser = document.getElementById('mLaser');
+  const mFaster = document.getElementById('mFaster');
+  const mSlower = document.getElementById('mSlower');
 
-  const powerChecksWrap = document.getElementById('powerChecks');
-  const powerHintEl = document.querySelector('.powerHint');
-  if(powerHintEl) powerHintEl.textContent = '（按下「重來」套用機率；總和>100%會顯示錯誤）';
+  // ========= Utilities =========
+  const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+  const rand = (a, b) => a + Math.random() * (b - a);
+  const lerp = (a, b, t) => a + (b - a) * t;
 
-  // ==============================
-  // Big overlay (機率錯誤大字)
-  // ==============================
-  const bigMsg = document.createElement('div');
-  bigMsg.style.position = 'absolute';
-  bigMsg.style.left = '50%';
-  bigMsg.style.top = '50%';
-  bigMsg.style.transform = 'translate(-50%, -50%)';
-  bigMsg.style.padding = '18px 22px';
-  bigMsg.style.borderRadius = '16px';
-  bigMsg.style.background = 'rgba(0,0,0,.55)';
-  bigMsg.style.border = '1px solid rgba(255,255,255,.22)';
-  bigMsg.style.backdropFilter = 'blur(10px)';
-  bigMsg.style.color = 'white';
-  bigMsg.style.fontWeight = '1000';
-  bigMsg.style.fontSize = '40px';
-  bigMsg.style.letterSpacing = '1px';
-  bigMsg.style.textAlign = 'center';
-  bigMsg.style.display = 'none';
-  bigMsg.style.zIndex = '5';
-  stage.appendChild(bigMsg);
+  function now() { return performance.now(); }
 
-  function showBigError(msg, ms=1100){
-    bigMsg.textContent = msg;
-    bigMsg.style.display = 'block';
-    clearTimeout(showBigError._t);
-    showBigError._t = setTimeout(()=>{ bigMsg.style.display = 'none'; }, ms);
-  }
+  // ========= Resize (robust) =========
+  const stageWrap = document.getElementById('stageWrap');
+  let dpr = Math.max(1, Math.min(2, window.devicePixelRatio || 1));
 
-
-// ==============================
-// Level Clear Overlay（通關）
-// ==============================
-const passMsg = document.createElement('div');
-passMsg.style.position = 'absolute';
-passMsg.style.left = '50%';
-passMsg.style.top = '50%';
-passMsg.style.transform = 'translate(-50%, -50%)';
-passMsg.style.padding = '22px 28px';
-passMsg.style.borderRadius = '22px';
-passMsg.style.background = 'rgba(0,0,0,.55)';
-passMsg.style.border = '1px solid rgba(255,255,255,.22)';
-passMsg.style.backdropFilter = 'blur(10px)';
-passMsg.style.color = 'white';
-passMsg.style.fontWeight = '1000';
-passMsg.style.fontSize = '92px';
-passMsg.style.letterSpacing = '3px';
-passMsg.style.textAlign = 'center';
-passMsg.style.display = 'none';
-passMsg.style.zIndex = '6';
-passMsg.style.textShadow = '0 12px 36px rgba(0,0,0,.55)';
-stage.appendChild(passMsg);
-
-let awaitingNextLevel = false;
-let pendingLevel = null;
-
-function spawnClearCelebration(){
-  const W = stage.clientWidth, H = stage.clientHeight;
-  const x = W/2, y = H*0.42;
-
-  // 亮的「通關」爆花：不分磚種，單純慶祝
-  shakeT = Math.min(0.18, shakeT + 0.12);
-  shakePow = Math.min(8, shakePow + 4.2);
-
-  const palette = [
-    'rgba(255,255,255,1)',
-    'rgba(0,210,255,1)',
-    'rgba(90,140,255,1)',
-    'rgba(255,190,60,1)',
-    'rgba(255,70,110,1)',
-    'rgba(186,85,255,1)',
-  ];
-  for(let i=0;i<120;i++){
-    const a = rand(0, Math.PI*2);
-    const sp = rand(240, 560);
-    particles.push({
-      x, y,
-      vx: Math.cos(a) * sp,
-      vy: Math.sin(a) * sp,
-      r: rand(1.8, 4.8),
-      life: rand(0.55, 1.15),
-      maxLife: 1.15,
-      color: pick(palette),
-      kind: (Math.random() < 0.25) ? 'ring' : 'dot',
-      drag: rand(1.2, 2.4),
-      g: 520
-    });
-  }
-  particles.push({ x, y, vx:0, vy:0, r:8, life:0.32, maxLife:0.32, color:'rgba(255,255,255,1)', kind:'shock', drag:0, g:0 });
-}
-
-function handleLevelClear(){
-  awaitingNextLevel = true;
-  pendingLevel = level + 1;
-
-  // 速度重設（符合需求）
-  globalSpeedMul = 1.0;
-  speedRampT = 0;
-  speedRampMul = 1.0;
-
-  passMsg.textContent = '通關!';
-  passMsg.style.display = 'block';
-
-  toast.textContent = '按任意鍵進入下一關';
-  toast.classList.add('show');
-
-  // 停止球移動（保持畫面）
-  running = false;
-  for(const b of balls){
-    if(!b.alive) continue;
-    b.stuck = true;
-    b.stickyAngle = null;
-    b.stickySpeed = null;
-  }
-  syncStuckBalls();
-
-  spawnClearCelebration();
-}
-
-function proceedNextLevel(){
-  if(!awaitingNextLevel) return;
-  awaitingNextLevel = false;
-
-  passMsg.style.display = 'none';
-  toast.classList.remove('show');
-
-  level = pendingLevel ?? (level + 1);
-  pendingLevel = null;
-  updateHUD();
-  buildLevel(level);
-}
-
-  // ==============================
-  // Utils
-  // ==============================
-  function clamp(v,a,b){ return Math.max(a, Math.min(b, v)); }
-  function rand(a,b){ return a + Math.random()*(b-a); }
-  function pick(arr){ return arr[(Math.random()*arr.length)|0]; }
-
-  function flashToast(msg, ms=900){
-    toast.textContent = msg;
-    toast.classList.add('show');
-    clearTimeout(flashToast._t);
-    flashToast._t = setTimeout(()=>{
-      if(!paused && !rewindActive) toast.classList.remove('show');
-      if(paused && !rewindActive) toast.textContent = 'PAUSED';
-    }, ms);
-  }
-
-  // ==============================
-  // Device
-  // ==============================
-  const isDesktopPointer = () => window.matchMedia && window.matchMedia('(pointer:fine)').matches;
-
-  // ==============================
-  // Audio
-  // ==============================
-  let soundEnabled = true;
-  let audioCtx = null;
-  function ensureAudio(){
-    if(!soundEnabled) return;
-    if(!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-    if(audioCtx.state === 'suspended') audioCtx.resume();
-  }
-
-  function beep({freq=440, dur=0.06, type='sine', gain=0.06, bend=0, when=0}={}){
-    if(!soundEnabled) return;
-    if(rewindActive) return;
-    ensureAudio();
-    if(!audioCtx) return;
-
-    const t0 = audioCtx.currentTime + when;
-    const osc = audioCtx.createOscillator();
-    const g = audioCtx.createGain();
-    osc.type = type;
-    osc.frequency.setValueAtTime(freq, t0);
-    if(bend){
-      osc.frequency.exponentialRampToValueAtTime(Math.max(40, freq + bend), t0 + dur);
+  function resizeCanvas() {
+    const r = stageWrap.getBoundingClientRect();
+    const w = Math.max(320, Math.floor(r.width));
+    const h = Math.max(320, Math.floor(r.height));
+    dpr = Math.max(1, Math.min(2, window.devicePixelRatio || 1));
+    const bw = Math.floor(w * dpr);
+    const bh = Math.floor(h * dpr);
+    if (canvas.width !== bw || canvas.height !== bh) {
+      canvas.width = bw;
+      canvas.height = bh;
     }
+  }
+  window.addEventListener('resize', resizeCanvas, { passive: true });
+  resizeCanvas();
+  requestAnimationFrame(resizeCanvas);
+  if ('ResizeObserver' in window) {
+    new ResizeObserver(() => resizeCanvas()).observe(stageWrap);
+  }
+
+  // ========= Audio (BGM + SFX) =========
+  let audioCtx = null;
+  let masterGain = null;
+  let bgmGain = null;
+  let sfxGain = null;
+  let audioEnabled = true;
+  let bgmEnabled = true;
+  let bgmRunning = false;
+
+  // Powerups
+  let powerupDropRate = 0.40; // default 40%
+  const POWERUP_WEIGHTS = [
+    { type: 'long', w: 30 },
+    { type: 'multi', w: 40 },
+    { type: 'life', w: 10 },
+    { type: 'slow', w: 20 },
+  ];
+  let powerups = []; // {x,y,vy,type}
+  let longTimer = 0;
+  let slowTimer = 0;
+  let slowFactor = 1;
+  let basePaddleW = 0;
+  let lastWallSfxAt = -1e9;
+  const WALL_SFX_COOLDOWN = 55; // ms
+
+  // simple step sequencer
+  let bgmTimer = null;
+  let bgmStep = 0;
+  const BPM = 112;
+  const stepMs = (60_000 / BPM) / 2; // 8th notes
+  const scale = [0, 2, 4, 7, 9]; // major pentatonic
+  const baseNote = 60; // C4
+
+  function midiToFreq(m) {
+    return 440 * Math.pow(2, (m - 69) / 12);
+  }
+
+  function ensureAudio() {
+    if (audioCtx) return;
+    audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    masterGain = audioCtx.createGain();
+    masterGain.gain.value = 0.65;
+    masterGain.connect(audioCtx.destination);
+
+    bgmGain = audioCtx.createGain();
+    bgmGain.gain.value = 0.45;
+    bgmGain.connect(masterGain);
+
+    sfxGain = audioCtx.createGain();
+    sfxGain.gain.value = 0.85;
+    sfxGain.connect(masterGain);
+  }
+
+  function playTone(freq, dur, type = 'sine', gain = 0.15) {
+    if (!audioEnabled) return;
+    ensureAudio();
+    const t0 = audioCtx.currentTime;
+    const o = audioCtx.createOscillator();
+    const g = audioCtx.createGain();
+    o.type = type;
+    o.frequency.setValueAtTime(freq, t0);
     g.gain.setValueAtTime(0.0001, t0);
     g.gain.exponentialRampToValueAtTime(gain, t0 + 0.01);
     g.gain.exponentialRampToValueAtTime(0.0001, t0 + dur);
-    osc.connect(g).connect(audioCtx.destination);
-    osc.start(t0);
-    osc.stop(t0 + dur + 0.02);
+    o.connect(g);
+    g.connect(sfxGain);
+    o.start(t0);
+    o.stop(t0 + dur + 0.02);
   }
 
-  // 倒轉專用音效
-  let rewindNode = null;
-  function startRewindSfx(){
-    if(!soundEnabled) return;
+  function noiseHit(dur = 0.08, gain = 0.25) {
+    if (!audioEnabled) return;
     ensureAudio();
-    if(!audioCtx) return;
-    stopRewindSfx();
-
-    const now = audioCtx.currentTime;
-    const osc = audioCtx.createOscillator();
-    const lfo = audioCtx.createOscillator();
-    const lfoGain = audioCtx.createGain();
-    const filter = audioCtx.createBiquadFilter();
+    const t0 = audioCtx.currentTime;
+    const bufferSize = Math.max(1, Math.floor(audioCtx.sampleRate * dur));
+    const buffer = audioCtx.createBuffer(1, bufferSize, audioCtx.sampleRate);
+    const data = buffer.getChannelData(0);
+    for (let i = 0; i < bufferSize; i++) data[i] = (Math.random() * 2 - 1) * (1 - i / bufferSize);
+    const src = audioCtx.createBufferSource();
+    src.buffer = buffer;
     const g = audioCtx.createGain();
-
-    osc.type = 'sawtooth';
-    osc.frequency.setValueAtTime(120, now);
-
-    lfo.type = 'triangle';
-    lfo.frequency.setValueAtTime(6.5, now);
-    lfoGain.gain.setValueAtTime(35, now);
-    lfo.connect(lfoGain).connect(osc.frequency);
-
-    filter.type = 'lowpass';
-    filter.frequency.setValueAtTime(900, now);
-    filter.frequency.exponentialRampToValueAtTime(260, now + 0.25);
-
-    g.gain.setValueAtTime(0.0001, now);
-    g.gain.exponentialRampToValueAtTime(0.10, now + 0.06);
-
-    osc.connect(filter).connect(g).connect(audioCtx.destination);
-    lfo.start(now);
-    osc.start(now);
-
-    rewindNode = { osc, lfo, g };
+    g.gain.setValueAtTime(gain, t0);
+    g.gain.exponentialRampToValueAtTime(0.0001, t0 + dur);
+    src.connect(g);
+    g.connect(sfxGain);
+    src.start(t0);
+    src.stop(t0 + dur + 0.02);
   }
 
-  function stopRewindSfx(){
-    if(!rewindNode) return;
-    try{
-      const now = audioCtx?.currentTime ?? 0;
-      rewindNode.g.gain.cancelScheduledValues(now);
-      rewindNode.g.gain.setValueAtTime(rewindNode.g.gain.value, now);
-      rewindNode.g.gain.exponentialRampToValueAtTime(0.0001, now + 0.07);
-      rewindNode.osc.stop(now + 0.09);
-      rewindNode.lfo.stop(now + 0.09);
-    }catch{}
-    rewindNode = null;
+  // ---- SFX (keep existing) ----
+  function sfxBrick() { playTone(midiToFreq(72 + scale[(Math.random() * scale.length) | 0]), 0.06, 'triangle', 0.12); }
+  function sfxPaddle() { playTone(midiToFreq(55), 0.05, 'square', 0.08); }
+  function sfxLoseLife() { playTone(midiToFreq(43), 0.12, 'sawtooth', 0.16); noiseHit(0.12, 0.12); }
+  function sfxLaser() { playTone(midiToFreq(84), 0.05, 'square', 0.10); }
+  function sfxClear() { playTone(midiToFreq(79), 0.18, 'triangle', 0.18); playTone(midiToFreq(86), 0.14, 'sine', 0.12); }
+  function sfxGameOver() { playTone(midiToFreq(40), 0.22, 'sawtooth', 0.22); }
+  function sfxWall() {
+    // crisp 'ting' different from brick
+    playTone(midiToFreq(96), 0.045, 'triangle', 0.10);
+    playTone(midiToFreq(108), 0.030, 'sine', 0.06);
   }
 
-  const SFX = {
-    paddle(){ beep({freq:520, dur:0.05, type:'triangle', gain:0.05, bend:80}); },
-    wall(){ beep({freq:320, dur:0.04, type:'sine', gain:0.04, bend:-40}); },
-    brick(){ beep({freq:760, dur:0.05, type:'square', gain:0.035, bend:-140}); },
-    brickBreak(){
-      beep({freq:980, dur:0.07, type:'square', gain:0.05, bend:220});
-      beep({freq:620, dur:0.08, type:'triangle', gain:0.03, bend:-120, when:0.01});
-    },
-    power(){ beep({freq:660, dur:0.08, type:'triangle', gain:0.06, bend:260}); },
-    shoot(){ beep({freq:1040, dur:0.04, type:'square', gain:0.032, bend:120}); },
-    lose(){ beep({freq:200, dur:0.18, type:'sawtooth', gain:0.05, bend:-120}); },
-    level(){ beep({freq:880, dur:0.12, type:'triangle', gain:0.06, bend:420}); },
-    gameover(){ beep({freq:140, dur:0.22, type:'sawtooth', gain:0.06, bend:-60}); }
-  };
+  // NEW: multi-ball immediate special SFX (only for multi)
+  function sfxMulti() {
+    if (!audioEnabled) return;
+    ensureAudio();
+    // short uplifting sparkle (no change to other SFX)
+    playTone(midiToFreq(88), 0.06, 'sine', 0.10);
+    playTone(midiToFreq(95), 0.06, 'triangle', 0.10);
+    playTone(midiToFreq(102), 0.08, 'sine', 0.08);
+    noiseHit(0.06, 0.06);
+  }
 
+  function startBGM() {
+    if (!audioEnabled) return;
+    if (!bgmEnabled) return;
+    ensureAudio();
+    if (audioCtx.state === 'suspended') audioCtx.resume();
+    if (bgmRunning) return;
+    bgmRunning = true;
+    bgmStep = 0;
+
+    const chordRoots = [0, 5, 7, 9]; // C F G Am
+    bgmTimer = setInterval(() => {
+      if (!bgmRunning || !audioEnabled || !audioCtx) return;
+
+      const t0 = audioCtx.currentTime;
+      // soft kick (noise + sine)
+      if (bgmStep % 4 === 0) {
+        const o = audioCtx.createOscillator();
+        const g = audioCtx.createGain();
+        o.type = 'sine';
+        o.frequency.setValueAtTime(110, t0);
+        o.frequency.exponentialRampToValueAtTime(55, t0 + 0.09);
+        g.gain.setValueAtTime(0.0001, t0);
+        g.gain.exponentialRampToValueAtTime(0.18, t0 + 0.01);
+        g.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.10);
+        o.connect(g); g.connect(bgmGain);
+        o.start(t0); o.stop(t0 + 0.12);
+      }
+
+      // chord pad
+      if (bgmStep % 8 === 0) {
+        const root = baseNote + chordRoots[((bgmStep / 8) | 0) % chordRoots.length];
+        const notes = [root, root + 4, root + 7];
+        for (const n of notes) {
+          const o = audioCtx.createOscillator();
+          const g = audioCtx.createGain();
+          o.type = 'triangle';
+          o.frequency.setValueAtTime(midiToFreq(n), t0);
+          g.gain.setValueAtTime(0.0001, t0);
+          g.gain.exponentialRampToValueAtTime(0.045, t0 + 0.02);
+          g.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.45);
+          o.connect(g); g.connect(bgmGain);
+          o.start(t0); o.stop(t0 + 0.50);
+        }
+      }
+
+      // melody
+      const rootIdx = ((bgmStep / 8) | 0) % chordRoots.length;
+      const chordRoot = baseNote + chordRoots[rootIdx];
+      const pick = scale[(Math.random() * scale.length) | 0];
+      const octave = (Math.random() < 0.5) ? 12 : 24;
+      const mel = chordRoot + pick + octave;
+      {
+        const o = audioCtx.createOscillator();
+        const g = audioCtx.createGain();
+        o.type = 'sine';
+        o.frequency.setValueAtTime(midiToFreq(mel), t0);
+        g.gain.setValueAtTime(0.0001, t0);
+        g.gain.exponentialRampToValueAtTime(0.08, t0 + 0.01);
+        g.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.18);
+        o.connect(g); g.connect(bgmGain);
+        o.start(t0); o.stop(t0 + 0.20);
+      }
+
+      bgmStep++;
+    }, stepMs);
+  }
+
+  function stopBGM() {
+    bgmRunning = false;
+    if (bgmTimer) { clearInterval(bgmTimer); bgmTimer = null; }
+  }
+
+  function setSoundEnabled(on) {
+    audioEnabled = on;
+    soundState.textContent = on ? '開' : '關';
+    if (!on) stopBGM();
+  }
+
+  function setBgmEnabled(on){
+    bgmEnabled = on;
+    if (bgmState) bgmState.textContent = on ? '開' : '關';
+    if (!on) stopBGM();
+    else {
+      if (audioEnabled && audioCtx && audioCtx.state !== 'suspended') startBGM();
+    }
+  }
+
+  // Always allow user gesture to start audio (not once-only)
+  function userGestureAudioStart() {
+    if (!audioEnabled) return;
+    ensureAudio();
+    if (audioCtx.state === 'suspended') audioCtx.resume();
+    startBGM();
+  }
+  window.addEventListener('pointerdown', userGestureAudioStart, { passive: true });
+  window.addEventListener('keydown', userGestureAudioStart);
+
+  // FIX: separate listeners (avoid nesting bug)
   btnSound.addEventListener('click', () => {
-    soundEnabled = !soundEnabled;
-    btnSound.textContent = soundEnabled ? '音效：開' : '音效：關';
-    if(!soundEnabled) stopRewindSfx();
-    if(soundEnabled) ensureAudio();
+    setSoundEnabled(!audioEnabled);
+    if (audioEnabled) userGestureAudioStart();
+  });
+  btnBgm && btnBgm.addEventListener('click', () => {
+    setBgmEnabled(!bgmEnabled);
+    if (bgmEnabled) userGestureAudioStart();
   });
 
-  // ==============================
-  // Powerups (含「不出現道具」)
-  // ==============================
-  const POWER_TYPES = [
-    { id:'expand', label:'長板', color:'rgba(90,140,255,.95)' },
-    { id:'multi',  label:'多球', color:'rgba(0,210,255,.95)' },
-    { id:'pierce', label:'穿透', color:'rgba(186,85,255,.95)' },
-    { id:'laser',  label:'雷射', color:'rgba(255,70,110,.95)' },
-    { id:'life',   label:'+1命', color:'rgba(0,220,140,.95)' },
-    { id:'slow',   label:'慢球', color:'rgba(255,190,60,.95)' },
-    { id:'sticky', label:'黏球', color:'rgba(255,120,210,.95)' },
-    { id:'none',   label:'不出現', color:'rgba(255,255,255,.20)' },
-  ];
-
-  // UI當前值（玩家可改；尚未套用到遊戲）
-  const powerEnabledUI = Object.fromEntries(POWER_TYPES.map(p => [p.id, p.id==='none' ? true : true]));
-  const powerChanceUI  = Object.fromEntries(POWER_TYPES.map(p => [p.id, 0]));
-
-  // ✅ 只有「按下重來」才會把UI值套用到遊戲生成
-  const powerEnabledApplied = Object.fromEntries(POWER_TYPES.map(p => [p.id, p.id==='none' ? true : true]));
-  const powerChanceApplied  = Object.fromEntries(POWER_TYPES.map(p => [p.id, 0]));
-
-  // 預設：100/(道具種類+1)%，餘數給 none，總和=100
-  function applyDefaultChances(targetChance){
-    const realPowers = POWER_TYPES.filter(p => p.id !== 'none');
-    const base = Math.floor(100 / (realPowers.length + 1));
-    for(const p of realPowers) targetChance[p.id] = base;
-    targetChance['none'] = 100 - base * realPowers.length;
+  // Powerup drop rate input (percent)
+  if (powerupRateInput) {
+    const v = Number(powerupRateInput.value);
+    if (!Number.isNaN(v)) powerupDropRate = clamp(v / 100, 0, 1);
+    const sync = () => {
+      const n = Number(powerupRateInput.value);
+      if (!Number.isNaN(n)) powerupDropRate = clamp(n / 100, 0, 1);
+    };
+    powerupRateInput.addEventListener('change', sync);
+    powerupRateInput.addEventListener('input', sync);
   }
-  applyDefaultChances(powerChanceUI);
-  applyDefaultChances(powerChanceApplied);
+  if (bgmState) bgmState.textContent = bgmEnabled ? '開' : '關';
 
-  function renderPowerCheckboxes(){
-    const realPowers = POWER_TYPES.filter(p => p.id !== 'none');
-    const none = POWER_TYPES.find(p => p.id === 'none');
+  // ========= Input =========
+  const keys = new Set();
+  window.addEventListener('keydown', (e) => {
+    keys.add(e.key.toLowerCase());
+    if (['arrowleft','arrowright',' ','p','s','a','d'].includes(e.key.toLowerCase())) e.preventDefault();
+  }, { passive: false });
+  window.addEventListener('keyup', (e) => keys.delete(e.key.toLowerCase()));
 
-    const realHTML = realPowers.map(p => `
-      <label class="powerLabel" data-id="${p.id}">
-        <input class="chk" type="checkbox" ${powerEnabledUI[p.id] ? 'checked' : ''} />
-        <span class="checkUI" aria-hidden="true"></span>
-        <span class="powerName">${p.label}</span>
+  let touchDrag = null; // {id, offsetX}
+  canvas.addEventListener('pointerdown', (e) => {
+    canvas.setPointerCapture(e.pointerId);
+    touchDrag = { id: e.pointerId, x: e.clientX };
+    // If waiting overlays:
+    if (state === 'CLEAR') advanceLevel();
+    if (state === 'GAMEOVER') restartGame();
+  });
+  canvas.addEventListener('pointermove', (e) => {
+    if (!touchDrag || e.pointerId !== touchDrag.id) return;
+    // map clientX to world
+    const rect = canvas.getBoundingClientRect();
+    const t = (e.clientX - rect.left) / rect.width;
+    paddle.x = clamp(t * W, paddle.w * 0.5, W - paddle.w * 0.5);
+  });
+  canvas.addEventListener('pointerup', (e) => {
+    if (touchDrag && e.pointerId === touchDrag.id) touchDrag = null;
+  });
 
-        <span class="chanceWrap" title="機率%（總和需<=100）">
-          <input class="chanceInput" type="number" min="0" max="100" step="1" value="${powerChanceUI[p.id]}" />
-          <span class="percent">%</span>
-        </span>
-      </label>
-    `).join('');
+  // Mobile buttons
+  const hold = { left:false, right:false };
+  const pressHold = (btn, flag) => {
+    const down = () => { hold[flag] = true; userGestureAudioStart(); };
+    const up = () => { hold[flag] = false; };
+    btn.addEventListener('pointerdown', down);
+    btn.addEventListener('pointerup', up);
+    btn.addEventListener('pointercancel', up);
+    btn.addEventListener('pointerleave', up);
+  };
+  pressHold(mLeft, 'left');
+  pressHold(mRight, 'right');
 
-    const noneHTML = none ? `
-      <label class="powerLabel" data-id="none" title="剩餘機率會自動分配到這裡；也可手動改（按重來套用）">
-        <input class="chk" type="checkbox" checked disabled />
-        <span class="checkUI" aria-hidden="true"></span>
-        <span class="powerName">${none.label}</span>
+  mLaunch.addEventListener('click', () => { userGestureAudioStart(); launchBall(); });
+  mLaser.addEventListener('click', () => { userGestureAudioStart(); tryShootLaser(); });
+  mFaster.addEventListener('click', () => { speedBias = clamp(speedBias + 0.08, -0.2, 0.6); });
+  mSlower.addEventListener('click', () => { speedBias = clamp(speedBias - 0.08, -0.2, 0.6); });
 
-        <span class="chanceWrap" title="機率%（會自動補到100）">
-          <input class="chanceInput" id="noneChanceInput" type="number" min="0" max="100" step="1" value="${powerChanceUI['none']}" />
-          <span class="percent">%</span>
-        </span>
-      </label>
-    ` : '';
+  // ========= Game constants =========
+  let W = 1280, H = 720; // world units = canvas pixels / dpr
+  function syncWorldSize() {
+    const w = canvas.width / dpr;
+    const h = canvas.height / dpr;
+    if (w !== W || h !== H) { W = w; H = h; }
+  }
 
-    powerChecksWrap.innerHTML = realHTML + noneHTML;
+  // ========= Game state =========
+  let state = 'PLAY'; // PLAY, CLEAR, GAMEOVER, PAUSE
+  let paused = false;
 
-    [...powerChecksWrap.querySelectorAll('.powerLabel')].forEach(label => {
-      const id = label.getAttribute('data-id');
-      const chk = label.querySelector('.chk');
-      const inp = label.querySelector('.chanceInput');
+  let score = 0;
+  let lives = 3;
+  let level = 1;
 
-      const syncDisable = () => {
-        if(id === 'none') inp.disabled = false;
-        else inp.disabled = !chk.checked;
-      };
+  // speed increases during a life, resets on death or clear
+  const baseBallSpeed = 420;
+  let speedRamp = 0; // grows over time during a life
+  let speedBias = 0; // manual +/-
 
-      if(id !== 'none'){
-        chk.addEventListener('change', () => {
-          powerEnabledUI[id] = !!chk.checked;
-          syncDisable();
-          flashToast(`${POWER_TYPES.find(x=>x.id===id)?.label ?? id}：${powerEnabledUI[id]?'啟用':'停用'}`, 800);
+  // Paddle
+  const paddle = { x: 0, y: 0, w: 160, h: 18, speed: 980 };
+  const paddleBaseSpeed = 980;
+
+  // Balls
+  let balls = []; // each: {x,y,r,vx,vy,stuck}
+
+  // Laser
+  const lasers = [];
+  let laserCooldownMs = 850; // lowered fire rate
+  let lastLaserAt = -1e9;
+
+  // Bricks
+  let bricks = []; // {x,y,w,h,hp,maxHp,color,kind}
+  let remainingBreakable = 0;
+
+  // Particles
+  let particles = []; // {x,y,vx,vy,life,ttl,kind,rot,vr,size,color}
+
+  // ========= UI =========
+  function updateHUD() {
+    elScore.textContent = String(score);
+    elLives.textContent = String(lives);
+    elLevel.textContent = String(level);
+  }
+  updateHUD();
+
+  function showOverlayClear(on) {
+    overlayClear.style.display = on ? 'flex' : 'none';
+    overlayClear.setAttribute('aria-hidden', on ? 'false' : 'true');
+  }
+  function showOverlayGameOver(on) {
+    overlayGameOver.style.display = on ? 'flex' : 'none';
+    overlayGameOver.setAttribute('aria-hidden', on ? 'false' : 'true');
+  }
+
+  overlayClear.addEventListener('pointerdown', (e) => { e.preventDefault(); advanceLevel(); });
+  overlayGameOver.addEventListener('pointerdown', (e) => { e.preventDefault(); restartGame(); });
+
+  // ========= Powerups =========
+  function pickPowerupType() {
+    let total = 0;
+    for (const it of POWERUP_WEIGHTS) total += it.w;
+    let r = Math.random() * total;
+    for (const it of POWERUP_WEIGHTS) {
+      r -= it.w;
+      if (r <= 0) return it.type;
+    }
+    return 'multi';
+  }
+
+  // NEW RULE:
+  // - multi: immediate effect + special SFX
+  // - others: spawn physical drop, apply on catch
+  function spawnPowerup(x, y) {
+    if (Math.random() > powerupDropRate) return;
+    const type = pickPowerupType();
+
+    if (type === 'multi') {
+      // immediate
+      sfxMulti();
+      applyPowerup('multi');
+      return;
+    }
+
+    // physical drop for others
+    powerups.push({ x, y, vy: 240, type });
+  }
+
+  function applyPowerup(type) {
+    if (type === 'long') {
+      longTimer = 14.0;
+      // paddle width handled by timer in update()
+    } else if (type === 'multi') {
+      // add 2 balls with slight angle differences
+      if (!balls || balls.length === 0) return;
+      const src = balls[0];
+      if (src.stuck) return;
+      const sp = Math.max(360, Math.hypot(src.vx, src.vy) || 420);
+      const baseAng = Math.atan2(src.vy, src.vx);
+      const angles = [-0.45, 0.45];
+      for (const a of angles) {
+        balls.push({
+          x: src.x,
+          y: src.y,
+          r: src.r,
+          vx: Math.cos(baseAng + a) * sp,
+          vy: Math.sin(baseAng + a) * sp,
+          stuck: false
         });
       }
-
-      inp.addEventListener('input', () => {
-        let v = Number(inp.value);
-        if(!Number.isFinite(v)) v = 0;
-        v = Math.floor(clamp(v, 0, 100));
-        inp.value = String(v);
-        powerChanceUI[id] = v;
-      });
-
-      syncDisable();
-    });
-  }
-  renderPowerCheckboxes();
-
-  function sumRealEnabledChancesUI(){
-    let sum = 0;
-    for(const p of POWER_TYPES){
-      if(p.id === 'none') continue;
-      if(!powerEnabledUI[p.id]) continue;
-      sum += (powerChanceUI[p.id] || 0);
+    } else if (type === 'life') {
+      lives += 1;
+      updateHUD();
+    } else if (type === 'slow') {
+      slowTimer = 12.0;
+      slowFactor = 0.75;
     }
-    return sum;
   }
 
-  function applyPowerSettingsFromUI(){
-    const sum = sumRealEnabledChancesUI();
+  function powerupLabel(type) {
+    if (type === 'long') return '長';
+    if (type === 'multi') return '多';
+    if (type === 'life') return '+1';
+    return '慢';
+  }
 
-    if(sum > 100){
-      showBigError('道具機率錯誤');
-      return false;
+  // ========= Level design =========
+  // Happy levels: first 3, then every 2-3 levels (alternating pattern)
+  function isHappyLevel(n) {
+    if (n <= 3) return true;
+    const t = n - 4;
+    let k = 0;
+    let pos = 1;
+    while (pos < t + 1 && k < 50) {
+      pos += (k % 2 === 0) ? 2 : 3;
+      k++;
     }
-
-    // 小於100：把剩下的機率補到 none
-    const remainder = 100 - sum;
-    powerChanceUI['none'] = remainder;
-
-    const noneInp = document.getElementById('noneChanceInput');
-    if(noneInp) noneInp.value = String(remainder);
-
-    // 套用到 Applied（生成磚頭只看 Applied）
-    for(const p of POWER_TYPES){
-      if(p.id === 'none'){
-        powerEnabledApplied[p.id] = true;
-        powerChanceApplied[p.id] = remainder;
-        continue;
-      }
-      powerEnabledApplied[p.id] = !!powerEnabledUI[p.id];
-      powerChanceApplied[p.id] = powerEnabledApplied[p.id] ? (powerChanceUI[p.id] || 0) : 0;
+    const happySet = new Set();
+    pos = 1;
+    for (let i = 0; i < 40; i++) {
+      happySet.add(4 + pos);
+      pos += (i % 2 === 0) ? 2 : 3;
     }
-    return true;
+    return happySet.has(n);
   }
 
-  function enabledPowerListForPickApplied(){
-    // 抽選用清單：包含 none
-    return POWER_TYPES.filter(p => {
-      if(p.id === 'none') return (powerChanceApplied[p.id] || 0) > 0;
-      return powerEnabledApplied[p.id] && (powerChanceApplied[p.id] || 0) > 0;
-    });
-  }
-
-  function weightedPickApplied(list){
-    let sum = 0;
-    for(const p of list) sum += powerChanceApplied[p.id] || 0;
-    if(sum <= 0) return null;
-    let r = Math.random() * sum;
-    for(const p of list){
-      r -= (powerChanceApplied[p.id] || 0);
-      if(r <= 0) return p;
-    }
-    return list[list.length - 1] || null;
-  }
-
-  // ==============================
-  // State
-  // ==============================
-  let score = 0, lives = 3, level = 1;
-  let paused = false;
-  let running = false;
-  let globalSpeedMul = 1.0;
-
-  // ✅ 球速遞增（死亡/過關後重設）
-  let speedRampT = 0;
-  let speedRampMul = 1.0;
-
-  let shakeT = 0;
-  let shakePow = 0;
-
-  // ✅ 道具UI時間無限制：改成「堆疊層數（不會隨時間倒數）」
-  const effects = { pierce: 0, laser: 0, sticky: 0 };
-
-  let secretEnabled = false;
-
-  // 倒轉：跨命 checkpoint
-  const HISTORY_FPS = 60;
-  const history = [];
-  let checkpointIndices = [];
-  let rewindTargetIndex = null;
-  let rewindActive = false;
-  let rewindAcc = 0;
-  let rewindClockAngle = 0;
-
-  let brickUidCounter = 1;
-
-  function deepClone(obj){
-    if(window.structuredClone) return structuredClone(obj);
-    return JSON.parse(JSON.stringify(obj));
-  }
-
-  // Objects
-  const paddle = { baseW: 120, w: 120, h: 14, x: 0, y: 0, speed: 780 };
-  const balls = [];
-  function makeBall(){
-    return {
-      r: 8, x:0, y:0, vx:220, vy:-320,
-      speedMul:1.0, stuck:true, alive:true,
-      stickyAngle: null, stickySpeed: null
-    };
-  }
-
-  let bricks = [];
-  const powerups = [];
-  const bullets = [];
-  const bulletCfg = { w:4, h:12, vy:-900, cooldown:0.48 }; // 降低雷射連射強度
-  let shootCD = 0;
-  const particles = [];
-
-  function isGameplayRunning(){
-    if(lives <= 0) return false;
-    if(paused || rewindActive) return false;
-    return balls.some(b => b.alive && !b.stuck);
-  }
-
-  // ==============================
-  // Snapshot
-  // ==============================
-  function makeSnapshot(){
-    return {
-      score, lives, level, paused, running, globalSpeedMul,
-      shakeT, shakePow,
-      effects: deepClone(effects),
-      paddle: deepClone(paddle),
-      balls: deepClone(balls),
-      bricks: deepClone(bricks),
-      powerups: deepClone(powerups),
-      bullets: deepClone(bullets),
-      particles: deepClone(particles),
-      shootCD,
-    };
-  }
-
-  function captureSnapshot(){
-    history.push(makeSnapshot());
-
-    const cap = HISTORY_FPS * 90;
-    if(history.length > cap){
-      const overflow = history.length - cap;
-      history.splice(0, overflow);
-
-      checkpointIndices = checkpointIndices
-        .map(i => i - overflow)
-        .filter(i => i >= 0);
-
-      if(rewindTargetIndex != null){
-        rewindTargetIndex -= overflow;
-        if(rewindTargetIndex < 0) rewindTargetIndex = 0;
+  // NEW: center bricks mask horizontally (keep shapes, always centered)
+  function centerMaskHoriz(mask, cols, rows) {
+    let minX = 1e9, maxX = -1e9;
+    for (let y = 0; y < rows; y++) {
+      for (let x = 0; x < cols; x++) {
+        if (mask[y][x]) { minX = Math.min(minX, x); maxX = Math.max(maxX, x); }
       }
     }
-  }
+    if (maxX < minX) return; // empty
+    const width = maxX - minX + 1;
+    const targetStart = Math.floor((cols - width) / 2);
+    const shift = targetStart - minX;
+    if (shift === 0) return;
 
-  function applySnapshot(s){
-    score = s.score; lives = s.lives; level = s.level;
-    paused = s.paused; running = s.running; globalSpeedMul = s.globalSpeedMul;
-    shakeT = s.shakeT; shakePow = s.shakePow;
-
-    effects.pierce = s.effects.pierce;
-    effects.laser = s.effects.laser;
-    effects.sticky = s.effects.sticky;
-
-    Object.assign(paddle, s.paddle);
-
-    balls.length = 0; s.balls.forEach(v => balls.push(v));
-    bricks.length = 0; s.bricks.forEach(v => bricks.push(v));
-    powerups.length = 0; s.powerups.forEach(v => powerups.push(v));
-    bullets.length = 0; s.bullets.forEach(v => bullets.push(v));
-    particles.length = 0; s.particles.forEach(v => particles.push(v));
-    shootCD = s.shootCD;
-
-    updateHUD();
-    renderEffectsUI();
-  }
-
-  // ==============================
-  // Secret checkbox
-  // ==============================
-  function setSecretEnabled(on){
-    secretEnabled = !!on;
-    secretNote.textContent = secretEnabled ? '（已啟用）' : '（勾選後才可使用）';
-  }
-  secretEnable.addEventListener('change', () => {
-    ensureAudio();
-    setSecretEnabled(secretEnable.checked);
-    flashToast(secretEnabled ? '秘密功能已啟用' : '秘密功能已關閉', 850);
-  });
-  setSecretEnabled(false);
-
-  // ==============================
-  // Rewind
-  // ==============================
-  function startRewind(){
-    if(rewindActive) return;
-    if(!checkpointIndices.length) return;
-    if(!secretEnabled) return;
-    if(!isGameplayRunning()) return;
-
-    rewindActive = true;
-    rewindAcc = 0;
-    rewindClockAngle = 0;
-
-    rewindTargetIndex = checkpointIndices[checkpointIndices.length - 1];
-
-    document.body.classList.add('rewinding');
-    toast.textContent = '倒轉中...';
-    toast.classList.add('show');
-    startRewindSfx();
-  }
-
-  function stopRewind(){
-    rewindActive = false;
-    rewindAcc = 0;
-    document.body.classList.remove('rewinding');
-    stopRewindSfx();
-
-    if(paused){
-      toast.textContent = 'PAUSED';
-      toast.classList.add('show');
-    }else{
-      toast.classList.remove('show');
+    const out = Array.from({ length: rows }, () => Array(cols).fill(0));
+    for (let y = 0; y < rows; y++) {
+      for (let x = 0; x < cols; x++) {
+        const v = mask[y][x];
+        if (!v) continue;
+        const nx = x + shift;
+        if (nx >= 0 && nx < cols) out[y][nx] = v;
+      }
+    }
+    for (let y = 0; y < rows; y++) {
+      for (let x = 0; x < cols; x++) mask[y][x] = out[y][x];
     }
   }
 
-  // ==============================
-  // HUD
-  // ==============================
-  function updateHUD(){
-    scoreEl.textContent = String(score);
-    livesEl.textContent = String(lives);
-    levelEl.textContent = String(level);
-  }
+  // Build a grid mask and convert to bricks.
+  function buildBricksForLevel(n) {
+    // Requirements:
+    // - Brick width based on 14-grid of screen width (avoid too wide)
+    // - Max 12 bricks horizontally
+    // - rows max 15
+    const topMargin = 64;
+    const rows = 15;
+    const cols = 12;
+    const baseCols = 14; // width reference
+    const bw = Math.floor(W / baseCols); // 1 brick = 1/14 of screen width
+    const bh = 24;
 
-  // ==============================
-  // Serve / Reset
-  // ==============================
-  function resetToServe(){
-    paddle.y = stage.clientHeight - 26;
-    paddle.x = (stage.clientWidth - paddle.w)/2;
+    const gridW = bw * cols;
+    const startX = Math.floor((W - gridW) / 2);
+    const startY = topMargin;
 
-    balls.length = 0;
-    const b = makeBall();
-    b.stuck = true;
-    b.speedMul = 1.0; // 每次開球都從基本速度開始
-    balls.push(b);
+    // mask[y][x] -> 0 empty, 1 normal, 2 hard
+    const mask = Array.from({ length: rows }, () => Array(cols).fill(0));
 
-    powerups.length = 0;
-    bullets.length = 0;
-    particles.length = 0;
-    shootCD = 0;
-    running = false;
+    const happy = isHappyLevel(n);
+    const styleIdx = (n - 1) % 4;
 
-    // ✅ 速度重設（死亡/過關後）
-    globalSpeedMul = 1.0;
-    speedRampT = 0;
-    speedRampMul = 1.0;
+    const cx = (cols - 1) / 2;
 
-    // 一命重置：道具效果（無限時間，但仍是「本命」有效）
-    effects.pierce = 0;
-    effects.laser = 0;
-    effects.sticky = 0;
+    // ---- scaling helpers (works for rows=15) ----
+    const R = rows;
+    const C = cols;
+    const yBottom = R - 1;
 
-    shakeT = 0; shakePow = 0;
+    // visually nice landmarks
+    const yA = Math.floor(R * 0.17);
+    const yB = Math.floor(R * 0.33);
+    const yC = Math.floor(R * 0.50);
+    const yD = Math.floor(R * 0.67);
+    const yE = Math.floor(R * 0.83);
 
-    syncStuckBalls();
-    renderEffectsUI();
-    updateHUD();
+    if (happy) {
+      // Happy patterns (scaled to 12 cols)
+      if (styleIdx === 0) {
+        // Arch ceiling + center tunnel (keeps concept)
+        for (let y = 0; y < rows; y++) {
+          for (let x = 0; x < cols; x++) {
+            const dx = (x - cx) / (cols / 2);
+            const arch = Math.max(0, 1 - dx * dx);
+            const height = Math.floor(2 + arch * (rows - 2)); // 2..rows
+            if (y < height) mask[y][x] = 1;
+          }
+        }
+        const tunnelHalf = 2;
+        const tunnelStart = Math.max(3, yB); // scale with rows
+        for (let y = tunnelStart; y < rows; y++) {
+          for (let x = Math.floor(cx) - tunnelHalf; x <= Math.floor(cx) + tunnelHalf; x++) {
+            if (x >= 0 && x < cols) mask[y][x] = 0;
+          }
+        }
+        // small hard core
+        for (let y = yA; y <= yA + 1; y++) {
+          for (let x = Math.floor(cx) - 1; x <= Math.floor(cx); x++) mask[y][x] = 2;
+        }
 
-    history.push(makeSnapshot());
-    checkpointIndices.push(history.length - 1);
-  }
+      } else if (styleIdx === 1) {
+        // Twin wings + pockets
+        for (let y = 0; y < rows; y++) {
+          for (let x = 0; x < cols; x++) {
+            const leftWing = x <= Math.floor(cx) - 2;
+            const rightWing = x >= Math.ceil(cx) + 2;
+            if (!(leftWing || rightWing)) continue;
 
-  function resetAll(){
-    score = 0; lives = 3; level = 1;
-    paused = false;
-    toast.classList.remove('show');
-    passMsg.style.display = 'none';
-    awaitingNextLevel = false;
-    pendingLevel = null;
+            const wingX = leftWing ? x : (cols - 1 - x);
 
-    checkpointIndices = [];
-    rewindTargetIndex = null;
-    history.length = 0;
+            const wingHeightTop = yE; // grows with rows
+            const falloff = Math.max(1, Math.floor(C / 6)); // cols=12 -> 2
+            const height = clamp(wingHeightTop - Math.floor(wingX / falloff), yA, R);
 
-    // ✅ 按下重來才套用機率設定
-    const ok = applyPowerSettingsFromUI();
-    if(!ok){
-      // 不套用、不重開
-      return;
-    }
+            if (y < height) mask[y][x] = 1;
+          }
+        }
 
-    buildLevel(level);
-    updateHUD();
-    renderEffectsUI();
-  }
-
-  // ==============================
-  // Input
-  // ==============================
-  const keys = { left:false, right:false };
-
-  function allowPointerMoveWhilePaused(){
-    return paused && secretEnabled && isDesktopPointer();
-  }
-
-  window.addEventListener('keydown', (e) => {
-    if(awaitingNextLevel){
-      ensureAudio();
-      proceedNextLevel();
-      return;
-    }
-
-    if(rewindActive){
-      if(e.key === 'z' || e.key === 'Z'){
-        ensureAudio();
-        stopRewind();
-      } else if(e.key === 'l' || e.key === 'L'){
-        if(checkpointIndices.length >= 2){
-          const cur = (rewindTargetIndex == null)
-            ? checkpointIndices[checkpointIndices.length - 1]
-            : rewindTargetIndex;
-
-          let idx = checkpointIndices.lastIndexOf(cur);
-          if(idx === -1){
-            idx = 0;
-            for(let i=0;i<checkpointIndices.length;i++){
-              if(checkpointIndices[i] <= cur) idx = i;
+        // pockets at mid height
+        const pockets = [{ cx: 2, cy: yC }, { cx: cols - 3, cy: yC }];
+        for (const p of pockets) {
+          for (let y = p.cy - 1; y <= p.cy + 2; y++) {
+            for (let x = p.cx - 1; x <= p.cx + 1; x++) {
+              if (y >= 0 && y < rows && x >= 0 && x < cols) mask[y][x] = 0;
             }
           }
-          rewindTargetIndex = checkpointIndices[Math.max(0, idx - 1)];
-          flashToast('跨命倒轉', 600);
         }
-      } else if(e.key === 'p' || e.key === 'P'){
-        ensureAudio();
-        stopRewind();
-        paused = true;
-        toast.textContent = 'PAUSED';
-        toast.classList.add('show');
+
+        // bridge across center gap (keep idea, slightly tighter to reduce skew)
+        for (let x = Math.floor(cx) - 1; x <= Math.ceil(cx) + 1; x++) mask[yA][x] = 1;
+
+      } else if (styleIdx === 2) {
+        // U-bowl (bottom follows rows)
+        const bottomTop = yD;
+        const bottomBot = Math.max(bottomTop + 2, yBottom - 2);
+
+        for (let y = 0; y < rows; y++) {
+          for (let x = 0; x < cols; x++) {
+            const edge = (x <= 1) || (x >= cols - 2);
+            const bottom = (y >= bottomTop && y <= bottomBot);
+
+            if (edge && y <= bottomBot) mask[y][x] = 1;
+            if (bottom && (x >= 2 && x <= cols - 3)) mask[y][x] = 1;
+          }
+        }
+
+        // center notch
+        for (let y = bottomTop; y <= bottomBot; y++) {
+          for (let x = Math.floor(cx) - 1; x <= Math.floor(cx) + 1; x++) mask[y][x] = 0;
+        }
+
+        // hard core
+        for (let y = yA; y <= yA + 1; y++) {
+          for (let x = Math.floor(cx) - 1; x <= Math.floor(cx); x++) mask[y][x] = 2;
+        }
+
+      } else {
+        // Frame maze
+        for (let y = 0; y < rows; y++) {
+          for (let x = 0; x < cols; x++) {
+            if (y === 0 || y === 1 || y === rows - 1) mask[y][x] = 1;
+            if (x === 0 || x === 1 || x === cols - 1 || x === cols - 2) mask[y][x] = 1;
+          }
+        }
+
+        const bar1 = yB;
+        const bar2 = yD;
+        const core = Math.floor((bar1 + bar2) / 2);
+
+        for (let x = 3; x <= cols - 4; x++) mask[bar1][x] = 1;
+        for (let x = 3; x <= cols - 4; x++) mask[bar2][x] = 1;
+
+        // hard center
+        for (let x = Math.floor(cx) - 1; x <= Math.floor(cx); x++) mask[core][x] = 2;
       }
-      return;
+
+    } else {
+      // Non-happy: keep varied shapes (scaled)
+      const k = (n - 1) % 6;
+
+      if (k === 0) {
+        // slope cap scales with rows
+        const cap = yE + 1;
+        for (let y = 0; y < rows; y++) for (let x = 0; x < cols; x++) {
+          if (y + x * 0.45 < cap) mask[y][x] = 1;
+        }
+
+      } else if (k === 1) {
+        // checker cap scales
+        const cap = yE + 1;
+        for (let y = 0; y < rows; y++) for (let x = 0; x < cols; x++) {
+          if ((x + y) % 2 === 0 && y < cap) mask[y][x] = 1;
+        }
+
+      } else if (k === 2) {
+        // two bands (scaled)
+        const band1 = yA;
+        const band2Start = yC;
+        const band2End = Math.min(R, yC + 2);
+        for (let y = 0; y < rows; y++) for (let x = 0; x < cols; x++) {
+          if (y < band1 || (y >= band2Start && y < band2End)) {
+            mask[y][x] = (Math.random() < 0.10) ? 2 : 1;
+          }
+        }
+
+      } else if (k === 3) {
+        // diamond (scaled)
+        const cy = R * 0.30;
+        const maxD = Math.floor(R * 0.55);
+        const minD = Math.floor(maxD * 0.50);
+        for (let y = 0; y < rows; y++) for (let x = 0; x < cols; x++) {
+          const d = Math.abs(x - cx) + Math.abs(y - cy);
+          if (d <= maxD && d >= minD) mask[y][x] = 1;
+        }
+
+      } else if (k === 4) {
+        // random cloud (scaled threshold)
+        const seed = (n * 9973) >>> 0;
+        let s = seed;
+        const rnd = () => (s = (s * 1664525 + 1013904223) >>> 0) / 2 ** 32;
+        const denseY = Math.max(4, yD); // upper dense region
+        for (let y = 0; y < rows; y++) for (let x = 0; x < cols; x++) {
+          const p = (y < denseY) ? 0.55 : 0.2;
+          if (rnd() < p) mask[y][x] = (rnd() < 0.10) ? 2 : 1;
+        }
+        for (let y = 0; y < rows; y++) { mask[y][Math.floor(cx)] = 0; }
+
+      } else {
+        // wave (scaled)
+        const base = Math.floor(R * 0.55);
+        const amp  = Math.floor(R * 0.30);
+        for (let y = 0; y < rows; y++) {
+          const wave = base + Math.floor(amp * Math.sin((y + n) * 0.7));
+          for (let x = 0; x < cols; x++) {
+            if (y < wave + 2) mask[y][x] = 1;
+          }
+        }
+      }
+
+      // keep most single-hit: small hard ratio
+      for (let y = 0; y < rows; y++) for (let x = 0; x < cols; x++) {
+        if (mask[y][x] === 1 && Math.random() < 0.06) mask[y][x] = 2;
+      }
     }
 
-    if(e.key === 'z' || e.key === 'Z'){
-      ensureAudio();
-      if(secretEnabled && isGameplayRunning()) startRewind();
-      return;
-    }
+    // NEW: always center mask (prevents big blank on one side)
+    centerMaskHoriz(mask, cols, rows);
 
-    if(e.key === 'p' || e.key === 'P'){ togglePause(); return; }
+    // Convert mask to bricks
+    bricks = [];
+    remainingBreakable = 0;
 
-    if(paused) return;
+    for (let y = 0; y < rows; y++) {
+      for (let x = 0; x < cols; x++) {
+        const cell = mask[y][x];
+        if (!cell) continue;
 
-    if(e.key === 'ArrowLeft' || e.key === 'a' || e.key === 'A'){
-      e.preventDefault(); keys.left = true; ensureAudio();
-    }
-    if(e.key === 'ArrowRight' || e.key === 'd' || e.key === 'D'){
-      e.preventDefault(); keys.right = true; ensureAudio();
-    }
+        const hp = (cell === 2) ? 2 : 1; // majority single-hit
+        const hue = ((x / cols) * 300 + (y / rows) * 60 + n * 13) % 360;
+        const color = `hsl(${hue} 85% ${cell === 2 ? 62 : 55}%)`;
 
-    if(e.key === 'w' || e.key === 'W' || e.key === ' '){
-      e.preventDefault(); launch(); ensureAudio();
-    }
-    if(e.key === 's' || e.key === 'S' || e.key === 'x' || e.key === 'X'){
-      e.preventDefault(); manualShoot(); ensureAudio();
-    }
-  });
-
-  window.addEventListener('keyup', (e) => {
-    if(e.key === 'ArrowLeft' || e.key === 'a' || e.key === 'A') keys.left = false;
-    if(e.key === 'ArrowRight' || e.key === 'd' || e.key === 'D') keys.right = false;
-  });
-
-  stage.addEventListener('mousemove', (e) => {
-    if(rewindActive) return;
-    if(paused && !allowPointerMoveWhilePaused()) return;
-    const rect = stage.getBoundingClientRect();
-    setPaddleCenter(e.clientX - rect.left);
-  });
-
-  let pointerDown = false;
-  stage.addEventListener('pointerdown', (e) => {
-    if(awaitingNextLevel){
-      ensureAudio();
-      proceedNextLevel();
-      return;
-    }
-    if(rewindActive) return;
-    if(paused && !allowPointerMoveWhilePaused()) return;
-    pointerDown = true;
-    stage.setPointerCapture(e.pointerId);
-    const rect = stage.getBoundingClientRect();
-    setPaddleCenter(e.clientX - rect.left);
-    ensureAudio();
-  });
-
-  stage.addEventListener('pointermove', (e) => {
-    if(rewindActive) return;
-    if(!pointerDown) return;
-    if(paused && !allowPointerMoveWhilePaused()) return;
-    const rect = stage.getBoundingClientRect();
-    setPaddleCenter(e.clientX - rect.left);
-  });
-
-  stage.addEventListener('pointerup', () => { pointerDown = false; });
-  stage.addEventListener('pointercancel', () => { pointerDown = false; });
-
-  function clampPaddle(){
-    paddle.x = clamp(paddle.x, 8, stage.clientWidth - paddle.w - 8);
-  }
-  function setPaddleCenter(cx){
-    paddle.x = cx - paddle.w/2;
-    clampPaddle();
-    syncStuckBalls();
-  }
-  function syncStuckBalls(){
-    for(const b of balls){
-      if(b.alive && b.stuck){
-        b.x = paddle.x + paddle.w/2;
-        b.y = paddle.y - b.r - 2;
+        bricks.push({
+          x: startX + x * bw + 2,
+          y: startY + y * bh + 2,
+          w: bw - 4,
+          h: bh - 6,
+          hp, maxHp: hp,
+          color,
+          kind: (cell === 2) ? 'hard' : 'normal'
+        });
+        remainingBreakable++;
       }
     }
   }
 
-  function bindHold(btn, onTick, interval=16){
-    let t=null;
-    const start=(ev)=>{ ev.preventDefault(); ensureAudio(); onTick(); t=setInterval(onTick, interval); };
-    const end=()=>{ if(t){ clearInterval(t); t=null; } };
-    btn.addEventListener('pointerdown', start);
-    btn.addEventListener('pointerup', end);
-    btn.addEventListener('pointercancel', end);
-    btn.addEventListener('pointerleave', end);
+  // ========= Setup / Reset =========
+  function resetPaddleBallPositions() {
+    paddle.w = clamp(W * 0.15, 120, 220);
+    paddle.h = clamp(H * 0.02, 14, 20);
+    paddle.x = W * 0.5;
+    paddle.y = H - 64;
+
+    const r = clamp(Math.min(W, H) * 0.012, 7, 10);
+
+    balls = [{
+      r,
+      x: paddle.x,
+      y: paddle.y - paddle.h * 0.5 - r - 2,
+      vx: 0,
+      vy: 0,
+      stuck: true
+    }];
+
+    basePaddleW = paddle.w;
+
+    slowFactor = 1;
+    slowTimer = 0;
+    longTimer = 0;
+
+    lasers.length = 0;
+    powerups.length = 0;
+    lastLaserAt = -1e9;
+
+    speedRamp = 0;
+    speedBias = clamp(speedBias, -0.2, 0.6);
   }
 
-  bindHold(btnLeft, () => {
-    if(rewindActive) return;
-    if(paused) return;
-    paddle.x -= 12; clampPaddle(); syncStuckBalls();
-  }, 16);
+  function startLevel(n) {
+    level = n;
+    buildBricksForLevel(level);
+    resetPaddleBallPositions();
+    state = 'PLAY';
+    paused = false;
+    showOverlayClear(false);
+    showOverlayGameOver(false);
+    updateHUD();
+  }
 
-  bindHold(btnRight, () => {
-    if(rewindActive) return;
-    if(paused) return;
-    paddle.x += 12; clampPaddle(); syncStuckBalls();
-  }, 16);
+  function restartGame() {
+    score = 0;
+    lives = 3;
+    startLevel(1);
+    updateHUD();
+    if (audioEnabled) startBGM();
+  }
 
-  btnLaunch.addEventListener('click', () => {
-    if(rewindActive) return;
-    ensureAudio(); launch();
-  });
-  btnShoot.addEventListener('click', () => {
-    if(rewindActive) return;
-    ensureAudio(); manualShoot();
-  });
+  // ========= Launch / Pause / Overlays =========
+  function launchBall() {
+    if (state !== 'PLAY') return;
+    if (!balls.length) return;
+    if (!balls[0].stuck) return;
+    balls[0].stuck = false;
+    const angle = rand(-0.65, -2.49); // upward random
+    const sp = baseBallSpeed;
+    balls[0].vx = Math.cos(angle) * sp;
+    balls[0].vy = Math.sin(angle) * sp;
+  }
 
-  btnPause.addEventListener('click', () => { if(!rewindActive) togglePause(); });
-
-  // ✅ 重來：先檢查/套用機率，再重開
-  btnReset.addEventListener('click', () => { if(!rewindActive) resetAll(); });
-
-  btnSpeedUp.addEventListener('click', () => {
-    if(rewindActive) return;
-    globalSpeedMul = Math.min(2.2, globalSpeedMul + 0.12);
-    flashToast(`速度 x${globalSpeedMul.toFixed(2)}`, 700);
-  });
-  btnSpeedDown.addEventListener('click', () => {
-    if(rewindActive) return;
-    globalSpeedMul = Math.max(0.65, globalSpeedMul - 0.12);
-    flashToast(`速度 x${globalSpeedMul.toFixed(2)}`, 700);
-  });
-
-  function togglePause(){
+  btnPause.addEventListener('click', () => {
+    userGestureAudioStart();
     paused = !paused;
-    if(paused){
-      toast.textContent = 'PAUSED';
-      toast.classList.add('show');
-    }else{
-      toast.classList.remove('show');
+  });
+  btnRestart.addEventListener('click', () => restartGame());
+
+  window.addEventListener('keydown', (e) => {
+    const k = e.key.toLowerCase();
+    if (k === 'p') {
+      paused = !paused;
+    } else if (k === ' ') {
+      if (state === 'CLEAR') advanceLevel();
+      else if (state === 'GAMEOVER') restartGame();
+      else launchBall();
+    } else if (k === 's') {
+      tryShootLaser();
+    } else if (state === 'CLEAR' || state === 'GAMEOVER') {
+      if (state === 'CLEAR') advanceLevel();
+      if (state === 'GAMEOVER') restartGame();
     }
+  });
+
+  function enterClear() {
+    state = 'CLEAR';
+    paused = true;
+    showOverlayClear(true);
+    // requirement: win sound (keep existing clear SFX)
+    sfxClear();
+    spawnClearFX();
   }
 
-  // ==============================
-  // Launch (含黏球釋放角度)
-  // ==============================
-  function launch(){
-    if(paused || rewindActive || lives <= 0) return;
-
-    let any = false;
-    for(const b of balls){
-      if(b.alive && b.stuck){
-        b.stuck = false;
-
-        if(b.stickyAngle != null && b.stickySpeed != null){
-          const sp = b.stickySpeed;
-          const ang = b.stickyAngle;
-          b.vx = sp * Math.sin(ang);
-          b.vy = -Math.abs(sp * Math.cos(ang));
-          b.stickyAngle = null;
-          b.stickySpeed = null;
-        }else{
-          const angle = rand(-0.18, 0.18);
-          const speed = 380;
-          b.vx = speed * Math.sin(angle);
-          b.vy = -Math.abs(speed * Math.cos(angle));
-        }
-        any = true;
-      }
-    }
-
-    if(any){
-      running = true;
-      SFX.level();
-    }
+  function advanceLevel() {
+    showOverlayClear(false);
+    paused = false;
+    state = 'PLAY';
+    startLevel(level + 1);
   }
 
-  // ==============================
-  // Collisions
-  // ==============================
-  function circleRectCollision(cx, cy, r, rx, ry, rw, rh){
-    const closestX = clamp(cx, rx, rx+rw);
-    const closestY = clamp(cy, ry, ry+rh);
+  function enterGameOver() {
+    state = 'GAMEOVER';
+    paused = true;
+    showOverlayGameOver(true);
+    sfxGameOver();
+    stopBGM();
+  }
+
+  // ========= Laser =========
+  function tryShootLaser() {
+    if (state !== 'PLAY' || paused) return;
+    if (!balls.length || balls[0].stuck) return; // only after start
+    const t = now();
+    if (t - lastLaserAt < laserCooldownMs) return;
+    lastLaserAt = t;
+
+    const y = paddle.y - paddle.h * 0.5 - 6;
+    lasers.push({ x: paddle.x - paddle.w * 0.38, y, vx: 0, vy: -1200, r: 3, life: 1.2 });
+    lasers.push({ x: paddle.x + paddle.w * 0.38, y, vx: 0, vy: -1200, r: 3, life: 1.2 });
+    sfxLaser();
+  }
+
+  // ========= Collision helpers =========
+  function circleRectCollision(cx, cy, cr, rx, ry, rw, rh) {
+    const closestX = clamp(cx, rx, rx + rw);
+    const closestY = clamp(cy, ry, ry + rh);
     const dx = cx - closestX;
     const dy = cy - closestY;
-    return (dx*dx + dy*dy) <= r*r;
-  }
-  function rectRect(a,b){
-    return a.x < b.x+b.w && a.x+a.w > b.x && a.y < b.y+b.h && a.y+a.h > b.y;
+    return (dx * dx + dy * dy) <= cr * cr;
   }
 
-  // ==============================
-  // Effects UI (無限時間 → 顯示「x層數」)
-  // ==============================
-  function renderEffectsUI(){
-    const items = [];
-    if(effects.laser > 0)  items.push({ name:'雷射', stacks:effects.laser, color:'rgba(255,70,110,.85)' });
-    if(effects.pierce > 0) items.push({ name:'穿透', stacks:effects.pierce, color:'rgba(186,85,255,.85)' });
-    if(effects.sticky > 0) items.push({ name:'黏球', stacks:effects.sticky, color:'rgba(255,120,210,.85)' });
+  function resolveBallRect(ball, rect) {
+    const bx = ball.x, by = ball.y;
+    const rx = rect.x, ry = rect.y, rw = rect.w, rh = rect.h;
 
-    effectsUI.innerHTML = items.map(it => {
-      const pct = clamp(it.stacks / 6, 0, 1) * 100; // 純視覺：最多6層滿格
-      return `
-        <div class="effItem">
-          <div class="effTop">
-            <span>${it.name}</span>
-            <span>x${it.stacks}</span>
-          </div>
-          <div class="bar"><div style="width:${pct}%;background:${it.color}"></div></div>
-        </div>
-      `;
-    }).join('');
-  }
+    const cx = clamp(bx, rx, rx + rw);
+    const cy = clamp(by, ry, ry + rh);
+    const dx = bx - cx;
+    const dy = by - cy;
 
-  // ==============================
-  // Particles / explosions
-  // ==============================
-  function spawnExplosion(brType, x, y){
-    let count = 24, speed = 320, life = [0.45, 0.95], size = [1.8, 4.8];
-    let palette = ['rgba(0,210,255,1)', 'rgba(255,255,255,1)', 'rgba(90,140,255,1)'];
-    let shape = 'dot';
-    let gravity = 520;
-
-    if(brType === 'hard'){
-      count = 38; speed = 380; life = [0.55, 1.15]; size = [2.0, 5.4];
-      palette = ['rgba(255,180,40,1)', 'rgba(255,240,120,1)', 'rgba(255,255,255,1)'];
-      shape = 'shard'; gravity = 600;
-    } else if(brType === 'mover'){
-      count = 30; speed = 420; life = [0.50, 1.05]; size = [1.8, 5.0];
-      palette = ['rgba(0,255,200,1)', 'rgba(0,210,255,1)', 'rgba(186,85,255,1)'];
-      shape = 'ring'; gravity = 560;
+    if (Math.abs(dx) > Math.abs(dy)) {
+      ball.vx *= -1;
+      ball.x += Math.sign(dx || ball.vx) * 2;
+    } else {
+      ball.vy *= -1;
+      ball.y += Math.sign(dy || ball.vy) * 2;
     }
+  }
 
-    shakeT = Math.min(0.14, shakeT + 0.10);
-    shakePow = Math.min(6, shakePow + (brType === 'hard' ? 4 : 2.8));
-
-    particles.push({ x, y, vx:0, vy:0, r:6, life:0.28, maxLife:0.28, color:(brType==='hard')?'rgba(255,220,120,1)':'rgba(0,210,255,1)', kind:'shock', drag:0, g:0 });
-
-    for(let i=0;i<count;i++){
-      const a = rand(0, Math.PI*2);
-      const sp = rand(speed*0.45, speed);
+  // ========= FX =========
+  function spawnParticles(x, y, count = 18) {
+    for (let i = 0; i < count; i++) {
+      const a = rand(0, Math.PI * 2);
+      const sp = rand(120, 720);
       particles.push({
         x, y,
         vx: Math.cos(a) * sp,
         vy: Math.sin(a) * sp,
-        r: rand(size[0], size[1]),
-        life: rand(life[0], life[1]),
-        maxLife: life[1],
-        color: pick(palette),
-        kind: shape,
-        drag: rand(1.2, 2.6),
-        g: gravity
+        life: rand(0.35, 0.85),
+        ttl: 0,
+        kind: 'dot',
+        rot: rand(0, Math.PI * 2),
+        vr: rand(-9, 9),
+        size: rand(2, 5),
+        color: `hsla(${rand(0,360)} 90% 60% / 0.95)`
       });
     }
   }
 
-  function addEffectStack(id, add=1){
-    effects[id] = Math.min(9, Math.max(0, effects[id] + add));
-  }
-
-  function spawnPowerupFixed(br){
-    if(!br || !br.dropId) return;
-    if(br.dropId === 'none') return;
-
-    // 注意：玩家可在中途取消勾選某道具 → 當下就不生成
-    if(!powerEnabledUI[br.dropId]) return;
-    if((powerChanceUI[br.dropId] || 0) <= 0) return;
-
-    const found = POWER_TYPES.find(p => p.id === br.dropId);
-    if(!found) return;
-
-    powerups.push({
-      id: found.id, label: found.label, color: found.color,
-      x: br.x + br.w/2, y: br.y + br.h/2,
-      r: 12, vy: 160 + level*8, alive:true
-    });
-  }
-
-  function applyPowerup(id){
-    if(id === 'none') return;
-    if(!powerEnabledUI[id] || (powerChanceUI[id] || 0) <= 0) return;
-
-    SFX.power();
-    switch(id){
-      case 'expand':
-        paddle.w = Math.min(stage.clientWidth * 0.62, paddle.w * 1.35);
-        flashToast('道具：長板', 900);
-        break;
-      case 'multi': {
-        const src = balls.find(b => b.alive) || balls[0];
-        if(src){
-          for(let i=0;i<2;i++){
-            const nb = makeBall();
-            nb.stuck = false;
-            nb.x = src.x; nb.y = src.y;
-            const ang = rand(-0.9, 0.9);
-            const sp = Math.hypot(src.vx, src.vy) || 360;
-            nb.vx = sp * Math.sin(ang);
-            nb.vy = -Math.abs(sp * Math.cos(ang));
-            nb.speedMul = src.speedMul;
-            balls.push(nb);
-          }
-          running = true;
-        }
-        flashToast('道具：多球', 900);
-        break;
-      }
-      case 'pierce':
-        addEffectStack('pierce', 1);
-        flashToast('道具：穿透（堆疊）', 900);
-        break;
-      case 'laser':
-        addEffectStack('laser', 1);
-        flashToast('道具：雷射（堆疊）', 900);
-        break;
-      case 'life':
-        lives++;
-        updateHUD();
-        flashToast('道具：+1 生命', 900);
-        break;
-      case 'slow':
-        for(const b of balls) b.speedMul = Math.max(0.70, b.speedMul * 0.82);
-        flashToast('道具：慢球', 900);
-        break;
-      case 'sticky':
-        addEffectStack('sticky', 1);
-        flashToast('道具：黏球（堆疊）', 900);
-        break;
+  function spawnStarBurst(x, y, count = 22) {
+    for (let i = 0; i < count; i++) {
+      const a = rand(-Math.PI * 0.95, -Math.PI * 0.05);
+      const sp = rand(260, 980);
+      particles.push({
+        x, y,
+        vx: Math.cos(a) * sp,
+        vy: Math.sin(a) * sp,
+        life: rand(0.55, 1.05),
+        ttl: 0,
+        kind: 'star',
+        rot: rand(0, Math.PI * 2),
+        vr: rand(-10, 10),
+        size: rand(6, 12),
+        color: `hsla(${rand(0,360)} 95% 62% / 0.98)`
+      });
     }
-    renderEffectsUI();
   }
 
-  // Laser
-  function fireBulletPair(){
-    if(effects.laser <= 0) return;
-    const leftX = paddle.x + paddle.w*0.20;
-    const rightX = paddle.x + paddle.w*0.80;
-    const y = paddle.y - 2;
-    bullets.push({ x:leftX, y, w:bulletCfg.w, h:bulletCfg.h, vy:bulletCfg.vy, alive:true });
-    bullets.push({ x:rightX, y, w:bulletCfg.w, h:bulletCfg.h, vy:bulletCfg.vy, alive:true });
-    SFX.shoot();
+  function spawnClearFX() {
+    spawnParticles(W * 0.5, H * 0.45, 60);
+    spawnStarBurst(W * 0.5, H * 0.62, 50);
   }
 
-  function manualShoot(){
-    if(paused || rewindActive) return;
-    if(effects.laser <= 0){
-      flashToast('需要先吃到「雷射」道具', 800);
-      return;
+  // ========= Game loop =========
+  let lastT = now();
+
+  function step() {
+    syncWorldSize();
+
+    paddle.y = H - 64;
+    if (balls.length && balls[0].stuck) {
+      balls[0].x = paddle.x;
+      balls[0].y = paddle.y - paddle.h * 0.5 - balls[0].r - 2;
     }
-    if(shootCD > 0) return; // ✅ 手動射擊也吃冷卻
-    fireBulletPair();
-    shootCD = laserCooldown();
+
+    const t = now();
+    let dt = (t - lastT) / 1000;
+    lastT = t;
+    dt = Math.min(0.033, Math.max(0.0, dt));
+
+    if (!paused && state === 'PLAY') update(dt);
+    draw();
+
+    requestAnimationFrame(step);
   }
 
-  function isHappyLevel(lv){
-  // 前三關快樂關卡；之後每 2~3 關穿插一次（2,3 交替）
-  if(lv <= 3) return true;
-  let cur = 3;
-  let step = 2;
-  while(cur < lv){
-    cur += step;
-    step = (step === 2) ? 3 : 2;
-  }
-  return cur === lv;
-}
+  function update(dt) {
+    // Paddle speed sync with ball speed (requirement #4)
+    // Use same multiplier that drives ball speed; clamp for control
+    const speedScale = clamp((1 + speedRamp + speedBias) * slowFactor, 0.65, 2.2);
+    paddle.speed = paddleBaseSpeed * speedScale;
 
-function laserCooldown(){
-  // 堆疊越多稍微快一點，但整體比原本慢很多
-  return clamp(0.55 - effects.laser * 0.04, 0.26, 0.55);
-}
+    // Paddle movement
+    let dir = 0;
+    if (keys.has('arrowleft') || keys.has('a') || hold.left) dir -= 1;
+    if (keys.has('arrowright') || keys.has('d') || hold.right) dir += 1;
 
-  // ==============================
-  // Level generation
-  // ==============================
-  function buildLevel(lv){
-    brickUidCounter = 1;
+    paddle.x += dir * paddle.speed * dt;
+    paddle.x = clamp(paddle.x, paddle.w * 0.5, W - paddle.w * 0.5);
 
-    const W = stage.clientWidth;
+    // Laser key
+    if (keys.has('s')) tryShootLaser();
 
-    // ✅ 球速會越來越快（本命/本關內），但死亡或過關會重設
-    if(isGameplayRunning()){
-      speedRampT += dt;
-      speedRampMul = clamp(1.0 + speedRampT * 0.045, 1.0, 2.15);
-    }
-    const cols = 11;
-    const rows = clamp(6 + Math.floor((lv-1)*0.65), 6, 12);
-
-    const padding = 10;
-    const topOffset = 18;
-    const sideMargin = 16;
-
-    const brickW = (W - sideMargin*2 - padding*(cols-1)) / cols;
-    const brickH = 22;
-
-    bricks = [];
-
-    const happy = isHappyLevel(lv);
-
-    // ✅ 大部分磚塊單擊消除：降低硬磚/移動磚比例
-    const wMover = happy ? Math.min(0.10, 0.03 + lv*0.006) : Math.min(0.14, 0.04 + lv*0.007);
-    const wHard  = happy ? Math.min(0.16, 0.06 + lv*0.008) : Math.min(0.28, 0.10 + lv*0.010);
-
-    const styles = ['arch','wave','diag','holes','crown','islands','zigzag'];
-    const style = happy ? 'happy' : styles[(lv-1) % styles.length]; // 每關形狀不同（循環）
-    const densityTarget = clamp(0.55 + lv*0.01, 0.55, 0.78);
-
-    const occ = Array.from({length: rows}, () => Array(cols).fill(false));
-
-    
-for(let r=1; r<rows; r++){
-  for(let c=0; c<cols; c++){
-    let on = false;
-
-    if(style === 'happy'){
-      // ✅ 快樂關卡：下方通道較空，球容易上去；上方密集+小孔洞，容易在磚塊間反彈清除
-      const mid = (cols - 1) / 2;
-      const topDenseRows = Math.floor(rows * 0.46);
-      const midRowsEnd   = Math.floor(rows * 0.72);
-
-      if(r <= topDenseRows){
-        on = true;
-
-        // 中央開一條「上升通道」讓球容易打到上方
-        if(Math.abs(c - mid) <= 1.2 && r >= 2) on = false;
-
-        // 小洞洞：避免滿版卡死、增加反彈路徑
-        if(((r + c) % 5) === 0) on = false;
-      } else if(r <= midRowsEnd){
-        // 中段：側邊導流 + 少量散佈
-        on = (c === 0 || c === cols-1 || c === 1 || c === cols-2);
-        if(!on){
-          const farFromMid = Math.abs(c - mid) > 2;
-          on = farFromMid && (((r + c) % 3) === 0);
-        }
-      } else {
-        // 底部：只留「保護墊」在兩側，降低掉落機率
-        on = (r === rows-2) && (c <= 1 || c >= cols-2);
-      }
+    // Paddle width effects (long paddle)
+    if (longTimer > 0) {
+      longTimer = Math.max(0, longTimer - dt);
+      paddle.w = clamp(basePaddleW * 1.35, 120, W * 0.35);
     } else {
-      // 原本的隨機形狀（仍保持每關不同 style）
-      if(style === 'arch'){
-        const mid = (cols-1)/2;
-        const dist = Math.abs(c-mid)/mid;
-        const curve = 1.0 - dist*dist;
-        on = (r/rows) < (0.25 + 0.75*curve);
-      } else if(style === 'wave'){
-        const k = Math.sin((c/cols)*Math.PI*2 + lv*0.35) * 1.25;
-        on = (r < rows*0.78 + k);
-      } else if(style === 'diag'){
-        const line = (c*(rows/cols));
-        on = (Math.abs(r - line) < rows*0.55);
-      } else if(style === 'holes'){
-        on = (Math.random() < densityTarget);
-      } else if(style === 'crown'){
-        on = !(r===1 && (c%3===1)) && !(r===2 && (c%4===2));
-      } else if(style === 'islands'){
-        const seeds = 3 + Math.min(3, Math.floor(lv/4));
-        let hit = false;
-        for(let i=0;i<seeds;i++){
-          const sx = (i*997 + lv*131) % cols;
-          const sy = 1 + ((i*541 + lv*73) % (rows-1));
-          const rad = 2.2 + (i%3)*0.9;
-          const dx = c - sx;
-          const dy = r - sy;
-          if((dx*dx + dy*dy) <= rad*rad) { hit = true; break; }
-        }
-        on = hit;
-      } else if(style === 'zigzag'){
-        const band = (r + Math.floor(lv/2)) % 3;
-        on = (band !== 0) && ((c + r) % 2 === 0 || r > rows*0.55);
-      }
-
-      const hole = (Math.random() < (0.10 + Math.min(0.16, lv*0.01)));
-      if(on && hole) on = false;
-      const topSparse = (r <= 2 && Math.random() < 0.25);
-      if(topSparse) on = false;
+      paddle.w = basePaddleW;
     }
 
-    occ[r][c] = on;
-  }
-}
-
-    // ✅ 生成只看「已套用」機率（按重來才更新）
-    const pickList = enabledPowerListForPickApplied();
-
-    for(let r=1; r<rows; r++){
-      for(let c=0; c<cols; c++){
-        if(!occ[r][c]) continue;
-
-        const roll = Math.random();
-        let type = 'normal';
-        if(roll < wMover) type = 'mover';
-        else if(roll < wMover + wHard) type = 'hard';
-
-        let hp = 1;
-        if(type === 'hard') hp = clamp(2 + Math.floor(lv/6), 2, 4);
-        if(type === 'mover') hp = clamp(2 + Math.floor(lv/10), 2, 3);
-
-        const mv = (type === 'mover') ? rand(40, 90) * (Math.random()<0.5?-1:1) : 0;
-
-        // ✅ 每顆磚固定抽一次（100%）：可能抽到 none
-        let dropId = 'none';
-        if(pickList.length > 0){
-          const picked = weightedPickApplied(pickList);
-          dropId = picked ? picked.id : 'none';
-        }
-
-        bricks.push({
-          uid: brickUidCounter++,
-          dropId,
-          type,
-          x: sideMargin + c*(brickW + padding),
-          y: topOffset + r*(brickH + padding),
-          w: brickW, h: brickH,
-          hp, maxHp: hp,
-          alive: true, vx: mv,
-        });
-      }
+    // Slow timer
+    if (slowTimer > 0) {
+      slowTimer = Math.max(0, slowTimer - dt);
+      if (slowTimer === 0) slowFactor = 1;
     }
 
-    globalSpeedMul = 1.0;
-    speedRampT = 0;
-    speedRampMul = 1.0;
-    paddle.w = clamp(paddle.baseW * (lv>=7 ? 0.95 : 1.0), 90, stage.clientWidth*0.62);
-
-    checkpointIndices = [];
-    rewindTargetIndex = null;
-    history.length = 0;
-
-    resetToServe();
-    flashToast(`第 ${lv} 關：${style}`, 850);
-  }
-
-  // ==============================
-  // Loop
-  // ==============================
-  let last = performance.now();
-  function tick(now){
-    const dt = Math.min(0.02, (now - last) / 1000);
-    last = now;
-
-    if(rewindActive){
-      updateRewind(dt);
-      draw();
-      requestAnimationFrame(tick);
-      return;
+    // Balls safety
+    if (!balls.length) {
+      balls = [{ r: clamp(Math.min(W, H) * 0.012, 7, 10), x: paddle.x, y: paddle.y - paddle.h, vx: 0, vy: 0, stuck: true }];
     }
 
-    if(awaitingNextLevel){
-      draw();
-      requestAnimationFrame(tick);
-      return;
-    }
+    // Speed ramp increases per-life, reset on death/clear
+    speedRamp = clamp(speedRamp + dt * 0.045, 0, 0.65);
 
-    if(!paused){
-      update(dt);
-      captureSnapshot();
-      draw();
-    }else{
-      draw();
-    }
+    for (let bi = balls.length - 1; bi >= 0; bi--) {
+      const ball = balls[bi];
 
-    requestAnimationFrame(tick);
-  }
-
-  function updateRewind(dt){
-    rewindClockAngle += dt * (Math.PI * 2 * 0.85);
-    rewindAcc += dt;
-    const step = 1 / HISTORY_FPS;
-
-    if(rewindTargetIndex == null){
-      rewindTargetIndex = checkpointIndices.length ? checkpointIndices[checkpointIndices.length - 1] : 0;
-    }
-
-    while(rewindAcc >= step){
-      rewindAcc -= step;
-
-      if(history.length - 1 <= rewindTargetIndex){
-        applySnapshot(history[rewindTargetIndex]);
-
-        running = false;
-        for(const b of balls){
-          if(!b.alive) continue;
-          b.stuck = true;
-          b.stickyAngle = null;
-          b.stickySpeed = null;
-        }
-        syncStuckBalls();
-        paused = false;
-
-        stopRewind();
-        return;
-      }
-
-      history.pop();
-      applySnapshot(history[history.length - 1]);
-    }
-  }
-
-  // ==============================
-  // Update gameplay
-  // ==============================
-  function update(dt){
-    if(shakeT > 0){
-      shakeT = Math.max(0, shakeT - dt);
-      shakePow *= Math.exp(-10 * dt);
-      if(shakePow < 0.2) shakePow = 0;
-    }
-
-    const dir = (keys.left?-1:0) + (keys.right?1:0);
-    if(dir !== 0){
-      paddle.x += dir * paddle.speed * dt;
-      clampPaddle();
-      syncStuckBalls();
-    }
-
-    const W = stage.clientWidth;
-
-    // ✅ 球速會越來越快（本命/本關內），但死亡或過關會重設
-    if(isGameplayRunning()){
-      speedRampT += dt;
-      speedRampMul = clamp(1.0 + speedRampT * 0.045, 1.0, 2.15);
-    }
-
-    for(const br of bricks){
-      if(!br.alive) continue;
-      if(br.type === 'mover'){
-        br.x += br.vx * dt * (1 + level*0.04);
-        if(br.x < 16){ br.x = 16; br.vx *= -1; }
-        if(br.x + br.w > W - 16){ br.x = W - 16 - br.w; br.vx *= -1; }
-      }
-    }
-
-    // powerups fall
-    for(const p of powerups){
-      if(!p.alive) continue;
-      p.y += p.vy * dt;
-
-      if(circleRectCollision(p.x, p.y, p.r, paddle.x, paddle.y, paddle.w, paddle.h)){
-        p.alive = false;
-        applyPowerup(p.id);
-      }
-      if(p.y - p.r > stage.clientHeight) p.alive = false;
-    }
-
-    // auto laser（有堆疊就開火，但已降頻）
-    if(effects.laser > 0){
-      shootCD = Math.max(0, shootCD - dt);
-      if(shootCD <= 0){
-        fireBulletPair();
-        shootCD = laserCooldown();
-      }
-    }else{
-      shootCD = 0;
-    }
-
-    // bullets
-    for(const bu of bullets){
-      if(!bu.alive) continue;
-      bu.y += bu.vy * dt;
-      if(bu.y + bu.h < 0){ bu.alive = false; continue; }
-
-      const brBox = { x: bu.x - bu.w/2, y: bu.y - bu.h, w: bu.w, h: bu.h };
-      for(const br of bricks){
-        if(!br.alive) continue;
-        const bBox = { x: br.x, y: br.y, w: br.w, h: br.h };
-        if(!rectRect(brBox, bBox)) continue;
-
-        br.hp--;
-        score += 8;
-
-        if(br.hp <= 0){
-          br.alive = false;
-          score += 40;
-          SFX.brickBreak();
-          spawnExplosion(br.type, br.x + br.w/2, br.y + br.h/2);
-          spawnPowerupFixed(br);
-        } else {
-          SFX.brick();
-        }
-        updateHUD();
-
-        bu.alive = false;
-        break;
-      }
-    }
-
-    // particles
-    for(const p of particles){
-      if(p.life <= 0) continue;
-
-      if(p.kind === 'shock'){
-        p.r += 520 * dt;
-        p.life -= dt;
+      if (ball.stuck) {
+        ball.x = paddle.x;
+        ball.y = paddle.y - paddle.h * 0.5 - ball.r - 2;
         continue;
       }
 
-      const d = Math.exp(-p.drag * dt);
-      p.vx *= d;
-      p.vy *= d;
-      p.vy += p.g * dt;
+      const spMul = (1 + speedRamp + speedBias) * slowFactor;
+      const maxSp = baseBallSpeed * (1.75 + speedBias);
 
-      p.x += p.vx * dt;
-      p.y += p.vy * dt;
-      p.life -= dt;
+      const sp = Math.hypot(ball.vx, ball.vy) || baseBallSpeed;
+      const target = clamp(baseBallSpeed * spMul, baseBallSpeed * 0.65, maxSp);
+      ball.vx *= target / sp;
+      ball.vy *= target / sp;
+
+      ball.x += ball.vx * dt;
+      ball.y += ball.vy * dt;
+
+      // Walls + wall SFX (cooldown)
+      const tms = now();
+      let hitWall = false;
+      if (ball.x - ball.r < 0) { ball.x = ball.r; ball.vx *= -1; hitWall = true; }
+      if (ball.x + ball.r > W) { ball.x = W - ball.r; ball.vx *= -1; hitWall = true; }
+      if (ball.y - ball.r < 0) { ball.y = ball.r; ball.vy *= -1; hitWall = true; }
+      if (hitWall && (tms - lastWallSfxAt) > WALL_SFX_COOLDOWN) {
+        lastWallSfxAt = tms;
+        if (audioEnabled) sfxWall();
+      }
+
+      // Paddle collision
+      const px = paddle.x - paddle.w * 0.5;
+      const py = paddle.y - paddle.h * 0.5;
+      if (circleRectCollision(ball.x, ball.y, ball.r, px, py, paddle.w, paddle.h) && ball.vy > 0) {
+        const hit = (ball.x - paddle.x) / (paddle.w * 0.5);
+        const angle = lerp(-Math.PI * 0.82, -Math.PI * 0.18, (hit + 1) * 0.5);
+        const sp2 = Math.hypot(ball.vx, ball.vy);
+        ball.vx = Math.cos(angle) * sp2;
+        ball.vy = Math.sin(angle) * sp2;
+        ball.y = py - ball.r - 1;
+        sfxPaddle();
+      }
+
+      // Brick collisions
+      for (let i = bricks.length - 1; i >= 0; i--) {
+        const b = bricks[i];
+        if (b.hp <= 0) continue;
+        if (circleRectCollision(ball.x, ball.y, ball.r, b.x, b.y, b.w, b.h)) {
+          resolveBallRect(ball, b);
+          b.hp -= 1;
+          score += (b.kind === 'hard') ? 18 : 10;
+          sfxBrick();
+          spawnParticles(ball.x, ball.y, b.kind === 'hard' ? 12 : 8);
+          if (b.hp <= 0) {
+            remainingBreakable--;
+            spawnParticles(b.x + b.w/2, b.y + b.h/2, 12);
+            // NEW rule: multi immediate, others drop physical
+            spawnPowerup(b.x + b.w/2, b.y + b.h/2);
+          }
+          break;
+        }
+      }
+
+      // Lose ball
+      if (ball.y - ball.r > H + 20) {
+        balls.splice(bi, 1);
+      }
     }
-    if(particles.length > 1400) particles.splice(0, particles.length - 1400);
 
-    // ball alive?
-    if(!balls.some(b => b.alive)){
+    // If all balls lost => lose life, reset ball & speed
+    if (balls.length === 0) {
       lives--;
       updateHUD();
-      SFX.lose();
+      sfxLoseLife();
 
-      if(lives <= 0){
-        running = false;
-        toast.textContent = 'GAME OVER（按「重來」）';
-        toast.classList.add('show');
-        SFX.gameover();
-        return;
-      }
-      resetToServe();
-      return;
-    }
+      speedRamp = 0; // reset on death
+      lasers.length = 0;
+      longTimer = 0;
+      slowTimer = 0;
+      slowFactor = 1;
 
-    // balls
-    for(const b of balls){
-      if(!b.alive) continue;
-      if(b.stuck) continue;
+      resetPaddleBallPositions();
 
-      const spMul = b.speedMul * globalSpeedMul * speedRampMul;
-      b.x += b.vx * spMul * dt;
-      b.y += b.vy * spMul * dt;
-
-      const H = stage.clientHeight;
-
-      if(b.x - b.r < 0){ b.x = b.r; b.vx *= -1; SFX.wall(); }
-      else if(b.x + b.r > W){ b.x = W - b.r; b.vx *= -1; SFX.wall(); }
-      if(b.y - b.r < 0){ b.y = b.r; b.vy *= -1; SFX.wall(); }
-
-      if(b.y - b.r > H){ b.alive = false; continue; }
-
-      // paddle
-      if(circleRectCollision(b.x, b.y, b.r, paddle.x, paddle.y, paddle.w, paddle.h) && b.vy > 0){
-        b.y = paddle.y - b.r - 0.5;
-
-        const hitPos = (b.x - (paddle.x + paddle.w/2)) / (paddle.w/2);
-        const maxBounce = Math.PI * 0.42;
-        const angle = clamp(hitPos, -1, 1) * maxBounce;
-        const speed = Math.max(320, Math.hypot(b.vx, b.vy));
-
-        if(effects.sticky > 0){
-          b.stuck = true;
-          b.stickyAngle = angle;
-          b.stickySpeed = speed;
-          syncStuckBalls();
-          SFX.paddle();
-          continue;
-        }
-
-        b.vx = speed * Math.sin(angle);
-        b.vy = -Math.abs(speed * Math.cos(angle));
-        b.speedMul = Math.min(2.2, b.speedMul + 0.01);
-        SFX.paddle();
-      }
-
-      // bricks
-      for(const br of bricks){
-        if(!br.alive) continue;
-        if(!circleRectCollision(b.x, b.y, b.r, br.x, br.y, br.w, br.h)) continue;
-
-        br.hp--;
-        score += 10;
-
-        if(br.hp <= 0){
-          br.alive = false;
-          score += 45;
-          SFX.brickBreak();
-          spawnExplosion(br.type, br.x + br.w/2, br.y + br.h/2);
-          spawnPowerupFixed(br);
-        } else {
-          SFX.brick();
-        }
-        updateHUD();
-
-        // 穿透：只要有堆疊就不反彈
-        if(effects.pierce <= 0){
-          const prevX = b.x - b.vx * spMul * dt;
-          const prevY = b.y - b.vy * spMul * dt;
-
-          const hitFromLeft   = prevX <= br.x - b.r;
-          const hitFromRight  = prevX >= br.x + br.w + b.r;
-          const hitFromTop    = prevY <= br.y - b.r;
-          const hitFromBottom = prevY >= br.y + br.h + b.r;
-
-          if(hitFromLeft || hitFromRight) b.vx *= -1;
-          else if(hitFromTop || hitFromBottom) b.vy *= -1;
-          else {
-            if(Math.abs(b.vx) > Math.abs(b.vy)) b.vx *= -1;
-            else b.vy *= -1;
-          }
-        }
-        break;
+      if (lives <= 0) {
+        enterGameOver();
       }
     }
 
-    // clear level
-    if(!awaitingNextLevel && !bricks.some(br => br.alive)){
-      SFX.level();
-      handleLevelClear();
-      return;
+    // Clear
+    if (remainingBreakable <= 0) {
+      speedRamp = 0; // reset on clear
+      enterClear();
     }
-  }
 
-  // ==============================
-  // Draw
-  // ==============================
-  function roundRect(c, x, y, w, h, r){
-    const rr = Math.min(r, w/2, h/2);
-    c.beginPath();
-    c.moveTo(x+rr, y);
-    c.arcTo(x+w, y, x+w, y+h, rr);
-    c.arcTo(x+w, y+h, x, y+h, rr);
-    c.arcTo(x, y+h, x, y, rr);
-    c.arcTo(x, y, x+w, y, rr);
-    c.closePath();
-  }
-
-  function brickFill(br){
-    if(br.type === 'mover') return 'rgba(0, 220, 180, .88)';
-    if(br.type === 'hard'){
-      const t = clamp(br.hp / br.maxHp, 0.15, 1);
-      return `rgba(255, ${Math.floor(160 + 70*(1-t))}, 50, ${0.78 + 0.16*(1-t)})`;
-    }
-    return 'rgba(70, 140, 255, .82)';
-  }
-
-  function drawParticles(){
-    const prevComp = ctx.globalCompositeOperation;
-    ctx.globalCompositeOperation = 'lighter';
-
-    for(const p of particles){
-      if(p.life <= 0) continue;
-      const t = clamp(p.life / p.maxLife, 0, 1);
-
-      if(p.kind === 'shock'){
-        ctx.globalAlpha = t * 0.8;
-        ctx.beginPath();
-        ctx.strokeStyle = p.color;
-        ctx.lineWidth = 3;
-        ctx.arc(p.x, p.y, p.r, 0, Math.PI*2);
-        ctx.stroke();
+    // Powerups update (physical only: long/life/slow)
+    for (let i = powerups.length - 1; i >= 0; i--) {
+      const p = powerups[i];
+      p.y += p.vy * dt;
+      const px = paddle.x - paddle.w * 0.5;
+      const py = paddle.y - paddle.h * 0.5;
+      if (p.x >= px && p.x <= px + paddle.w && p.y >= py && p.y <= py + paddle.h + 26) {
+        applyPowerup(p.type);
+        powerups.splice(i, 1);
         continue;
       }
+      if (p.y > H + 40) powerups.splice(i, 1);
+    }
 
-      ctx.globalAlpha = (0.18 + 0.82*t);
+    // Lasers update
+    for (let i = lasers.length - 1; i >= 0; i--) {
+      const l = lasers[i];
+      l.y += l.vy * dt;
+      l.life -= dt;
+      if (l.life <= 0 || l.y < -40) { lasers.splice(i, 1); continue; }
 
-      if(p.kind === 'shard'){
-        const ang = Math.atan2(p.vy, p.vx);
-        const len = p.r * 2.6;
-        const wid = Math.max(1.2, p.r * 0.8);
-        ctx.save();
-        ctx.translate(p.x, p.y);
-        ctx.rotate(ang);
-        ctx.fillStyle = p.color;
-        ctx.fillRect(-len/2, -wid/2, len, wid);
-        ctx.restore();
-      } else if(p.kind === 'ring'){
-        ctx.beginPath();
-        ctx.strokeStyle = p.color;
-        ctx.lineWidth = Math.max(1.4, p.r * 0.7);
-        ctx.arc(p.x, p.y, Math.max(2.0, p.r*1.5), 0, Math.PI*2);
-        ctx.stroke();
-      } else {
-        ctx.beginPath();
-        ctx.fillStyle = p.color;
-        ctx.arc(p.x, p.y, p.r, 0, Math.PI*2);
-        ctx.fill();
+      // laser hits bricks
+      for (let j = bricks.length - 1; j >= 0; j--) {
+        const b = bricks[j];
+        if (b.hp <= 0) continue;
+        if (l.x >= b.x && l.x <= b.x + b.w && l.y >= b.y && l.y <= b.y + b.h) {
+          b.hp -= 1;
+          score += 8;
+          spawnParticles(l.x, l.y, 10);
+          noiseHit(0.05, 0.10);
+          if (b.hp <= 0) remainingBreakable--;
+          lasers.splice(i, 1);
+          break;
+        }
       }
     }
 
-    ctx.globalAlpha = 1;
-    ctx.globalCompositeOperation = prevComp;
-  }
-
-  function drawClockOverlay(W, H){
-    const cx = W/2, cy = H/2;
-    const R = Math.min(W, H) * 0.20;
-
-    ctx.save();
-    ctx.globalAlpha = 0.86;
-
-    ctx.beginPath();
-    ctx.fillStyle = 'rgba(255,255,255,.74)';
-    ctx.arc(cx, cy, R, 0, Math.PI*2);
-    ctx.fill();
-
-    ctx.beginPath();
-    ctx.strokeStyle = 'rgba(15,47,85,.35)';
-    ctx.lineWidth = 6;
-    ctx.arc(cx, cy, R-2, 0, Math.PI*2);
-    ctx.stroke();
-
-    ctx.strokeStyle = 'rgba(15,47,85,.35)';
-    for(let i=0;i<60;i++){
-      const a = (i/60) * Math.PI*2;
-      const isHour = (i % 5 === 0);
-      ctx.lineWidth = isHour ? 3.5 : 2;
-      const r1 = R - (isHour ? 14 : 10);
-      const r2 = R - 2;
-      ctx.beginPath();
-      ctx.moveTo(cx + Math.cos(a)*r1, cy + Math.sin(a)*r1);
-      ctx.lineTo(cx + Math.cos(a)*r2, cy + Math.sin(a)*r2);
-      ctx.stroke();
+    // Particles
+    for (let i = particles.length - 1; i >= 0; i--) {
+      const p = particles[i];
+      p.ttl += dt;
+      if (p.ttl > p.life) { particles.splice(i, 1); continue; }
+      p.vy += 880 * dt;
+      p.x += p.vx * dt;
+      p.y += p.vy * dt;
+      p.rot += p.vr * dt;
     }
-
-    const secA  = -rewindClockAngle * 2.2;
-    const minA  = secA / 60;
-    const hourA = secA / 720;
-
-    ctx.beginPath();
-    ctx.strokeStyle = 'rgba(15,47,85,.78)';
-    ctx.lineWidth = 8;
-    ctx.lineCap = 'round';
-    ctx.moveTo(cx, cy);
-    ctx.lineTo(cx + Math.cos(hourA)*(R*0.45), cy + Math.sin(hourA)*(R*0.45));
-    ctx.stroke();
-
-    ctx.beginPath();
-    ctx.strokeStyle = 'rgba(15,47,85,.62)';
-    ctx.lineWidth = 6;
-    ctx.lineCap = 'round';
-    ctx.moveTo(cx, cy);
-    ctx.lineTo(cx + Math.cos(minA)*(R*0.62), cy + Math.sin(minA)*(R*0.62));
-    ctx.stroke();
-
-    ctx.beginPath();
-    ctx.strokeStyle = 'rgba(255,70,110,.92)';
-    ctx.lineWidth = 3.5;
-    ctx.lineCap = 'round';
-    ctx.moveTo(cx, cy);
-    ctx.lineTo(cx + Math.cos(secA)*(R*0.74), cy + Math.sin(secA)*(R*0.74));
-    ctx.stroke();
-
-    ctx.beginPath();
-    ctx.fillStyle = 'rgba(15,47,85,.70)';
-    ctx.arc(cx, cy, 6, 0, Math.PI*2);
-    ctx.fill();
-
-    ctx.restore();
   }
 
-  function draw(){
-    const W = stage.clientWidth, H = stage.clientHeight;
+  // ========= Render =========
+  function drawRoundedRect(x, y, w, h, r) {
+    r = Math.min(r, w / 2, h / 2);
+    ctx.beginPath();
+    ctx.moveTo(x + r, y);
+    ctx.arcTo(x + w, y, x + w, y + h, r);
+    ctx.arcTo(x + w, y + h, x, y + h, r);
+    ctx.arcTo(x, y + h, x, y, r);
+    ctx.arcTo(x, y, x + w, y, r);
+    ctx.closePath();
+  }
 
-    ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+  function drawStar(x, y, outerR, innerR, points) {
+    const step = Math.PI / points;
+    ctx.beginPath();
+    for (let i = 0; i < points * 2; i++) {
+      const r = (i % 2 === 0) ? outerR : innerR;
+      const a = i * step - Math.PI / 2;
+      const px = x + Math.cos(a) * r;
+      const py = y + Math.sin(a) * r;
+      if (i === 0) ctx.moveTo(px, py);
+      else ctx.lineTo(px, py);
+    }
+    ctx.closePath();
+  }
+
+  function draw() {
+    syncWorldSize();
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+
     ctx.clearRect(0, 0, W, H);
-
-    const g = ctx.createLinearGradient(0,0,0,H);
-    if(rewindActive){
-      g.addColorStop(0, 'rgba(255, 250, 220, 1)');
-      g.addColorStop(1, 'rgba(255, 236, 170, 1)');
-    } else {
-      g.addColorStop(0, 'rgba(230, 248, 255, 1)');
-      g.addColorStop(1, 'rgba(200, 232, 255, 1)');
-    }
+    const g = ctx.createRadialGradient(W*0.3, H*0.25, 10, W*0.5, H*0.6, Math.max(W,H));
+    g.addColorStop(0, 'rgba(255,255,255,0.06)');
+    g.addColorStop(0.6, 'rgba(0,0,0,0.10)');
+    g.addColorStop(1, 'rgba(0,0,0,0.25)');
     ctx.fillStyle = g;
-    ctx.fillRect(0, 0, W, H);
+    ctx.fillRect(0,0,W,H);
 
-    for(const br of bricks){
-      if(!br.alive) continue;
-      ctx.fillStyle = brickFill(br);
-      ctx.fillRect(br.x, br.y, br.w, br.h);
-
-      const hg = ctx.createLinearGradient(br.x, br.y, br.x, br.y+br.h);
-      hg.addColorStop(0, 'rgba(255,255,255,.25)');
-      hg.addColorStop(0.45, 'rgba(255,255,255,.08)');
-      hg.addColorStop(1, 'rgba(0,0,0,.08)');
-      ctx.fillStyle = hg;
-      ctx.fillRect(br.x, br.y, br.w, br.h);
-
-      ctx.strokeStyle = 'rgba(15, 47, 85, .26)';
-      ctx.strokeRect(br.x+0.5, br.y+0.5, br.w-1, br.h-1);
-
-      const t = clamp(br.hp / br.maxHp, 0, 1);
-      ctx.fillStyle = (br.type === 'hard') ? 'rgba(255,240,120,.95)' : 'rgba(255,255,255,.70)';
-      ctx.fillRect(br.x+5, br.y + br.h - 6, (br.w - 10)*t, 3);
-    }
-
-    drawParticles();
-
-    for(const p of powerups){
-      if(!p.alive) continue;
-      ctx.beginPath();
-      ctx.fillStyle = p.color;
-      ctx.arc(p.x, p.y, p.r, 0, Math.PI*2);
+    // Bricks
+    for (const b of bricks) {
+      if (b.hp <= 0) continue;
+      const hpT = b.hp / b.maxHp;
+      ctx.fillStyle = b.color;
+      drawRoundedRect(b.x, b.y, b.w, b.h, 6);
       ctx.fill();
-      ctx.strokeStyle = 'rgba(15, 47, 85, .25)';
-      ctx.stroke();
 
-      ctx.fillStyle = 'rgba(0,0,0,.55)';
-      ctx.font = '950 11px system-ui, -apple-system, Segoe UI, Roboto, Noto Sans TC, Arial';
+      // glossy
+      ctx.fillStyle = `rgba(255,255,255,${0.18 * hpT})`;
+      drawRoundedRect(b.x+2, b.y+2, b.w-4, Math.max(4, (b.h-6)*0.42), 6);
+      ctx.fill();
+
+      if (b.kind === 'hard') {
+        ctx.strokeStyle = 'rgba(255,255,255,0.22)';
+        ctx.lineWidth = 1;
+        drawRoundedRect(b.x+1, b.y+1, b.w-2, b.h-2, 6);
+        ctx.stroke();
+      }
+    }
+
+    // Lasers
+    for (const l of lasers) {
+      ctx.fillStyle = 'rgba(255,255,255,0.95)';
+      ctx.fillRect(l.x - 1, l.y - 18, 2, 18);
+      ctx.fillStyle = 'rgba(0,220,255,0.55)';
+      ctx.fillRect(l.x - 3, l.y - 14, 6, 14);
+    }
+
+    // Powerups (physical ones only)
+    for (const p of powerups) {
+      ctx.save();
+      ctx.translate(p.x, p.y);
+      let col = 'rgba(255,209,102,0.95)';
+      if (p.type === 'life') col = 'rgba(255,84,112,0.95)';
+      if (p.type === 'slow') col = 'rgba(160,230,120,0.95)';
+      // multi never spawns physically now
+      ctx.fillStyle = col;
+      drawRoundedRect(-14, -10, 28, 20, 9);
+      ctx.fill();
+      ctx.fillStyle = 'rgba(0,0,0,0.18)';
+      ctx.font = '900 12px system-ui';
       ctx.textAlign = 'center';
-      ctx.fillText(p.label, p.x, p.y + 4);
+      ctx.textBaseline = 'middle';
+      ctx.fillText(powerupLabel(p.type), 0, 1);
+      ctx.restore();
     }
 
-    for(const bu of bullets){
-      if(!bu.alive) continue;
-      ctx.fillStyle = 'rgba(255,70,110,.95)';
-      ctx.fillRect(bu.x - bu.w/2, bu.y - bu.h, bu.w, bu.h);
-    }
-
-    ctx.fillStyle = (effects.laser > 0) ? 'rgba(255,70,110,.95)' : 'rgba(90,140,255,.95)';
-    roundRect(ctx, paddle.x, paddle.y, paddle.w, paddle.h, 10);
+    // Paddle
+    const px = paddle.x - paddle.w * 0.5;
+    const py = paddle.y - paddle.h * 0.5;
+    const pg = ctx.createLinearGradient(px, py, px, py + paddle.h);
+    pg.addColorStop(0, 'rgba(255,255,255,0.25)');
+    pg.addColorStop(1, 'rgba(255,255,255,0.05)');
+    ctx.fillStyle = 'rgba(120, 190, 255, 0.35)';
+    drawRoundedRect(px, py, paddle.w, paddle.h, 10);
+    ctx.fill();
+    ctx.fillStyle = pg;
+    drawRoundedRect(px, py, paddle.w, paddle.h, 10);
     ctx.fill();
 
-    for(const b of balls){
-      if(!b.alive) continue;
+    // Balls
+    for (const ball of balls) {
+      ctx.fillStyle = 'rgba(255,255,255,0.96)';
       ctx.beginPath();
-      let col = 'rgba(0,210,255,.95)';
-      if(effects.pierce > 0) col = 'rgba(186,85,255,.95)';
-      if(effects.sticky > 0) col = 'rgba(255,120,210,.92)';
-      ctx.fillStyle = col;
-      ctx.arc(b.x, b.y, b.r, 0, Math.PI*2);
+      ctx.arc(ball.x, ball.y, ball.r, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = 'rgba(0,0,0,0.12)';
+      ctx.beginPath();
+      ctx.arc(ball.x + ball.r*0.25, ball.y + ball.r*0.25, ball.r*0.75, 0, Math.PI * 2);
       ctx.fill();
     }
 
-    if(rewindActive) drawClockOverlay(W, H);
+    // Particles
+    for (const p of particles) {
+      const t = 1 - p.ttl / p.life;
+      ctx.globalAlpha = Math.max(0, t);
+      ctx.fillStyle = p.color;
 
-    if(paused && !rewindActive){
-      ctx.fillStyle = 'rgba(255,255,255,.10)';
-      ctx.fillRect(0,0,W,H);
+      if (p.kind === 'dot') {
+        ctx.beginPath();
+        ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
+        ctx.fill();
+      } else {
+        ctx.save();
+        ctx.translate(p.x, p.y);
+        ctx.rotate(p.rot);
+        drawStar(0, 0, p.size, p.size * 0.5, 5);
+        ctx.fill();
+        ctx.restore();
+      }
+      ctx.globalAlpha = 1;
+    }
+
+    // paused label
+    if (paused && state === 'PLAY') {
+      ctx.fillStyle = 'rgba(255,255,255,0.85)';
+      ctx.font = `900 ${Math.floor(Math.min(W,H)*0.045)}px system-ui`;
+      ctx.textAlign = 'center';
+      ctx.fillText('暫停', W*0.5, H*0.52);
     }
   }
 
-  // ==============================
-  // Init
-  // ==============================
-  // 第一次進入：也先把UI機率套用一次，確保「已套用」與UI一致（仍符合：改完要按重來才會影響生成）
-  applyPowerSettingsFromUI();
-  buildLevel(1);
-  updateHUD();
-  renderEffectsUI();
-  requestAnimationFrame(tick);
+  // ========= Control buttons mapping =========
+  btnRestart.addEventListener('click', () => { userGestureAudioStart(); restartGame(); });
+  mLaunch.addEventListener('click', () => {
+    if (state === 'CLEAR') advanceLevel();
+    else if (state === 'GAMEOVER') restartGame();
+    else launchBall();
+  });
+
+  // ========= Start =========
+  function updateHUDSafe() { updateHUD(); }
+  updateHUDSafe();
+
+  function showOverlayClearSafe(on){ showOverlayClear(on); }
+  function showOverlayGameOverSafe(on){ showOverlayGameOver(on); }
+
+  // Start at level 1
+  startLevel(1);
+
+  if (audioEnabled) {
+    soundState.textContent = '開';
+  }
+
+  requestAnimationFrame(step);
 })();
