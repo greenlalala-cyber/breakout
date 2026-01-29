@@ -1,131 +1,65 @@
-/* ---- Base ---- */
-*{box-sizing:border-box;margin:0;padding:0}
-html,body{width:100%;height:100%;background:#cfe3f6;font-family:system-ui,-apple-system,Segoe UI,Roboto,Noto Sans TC,Arial,sans-serif;overflow:hidden}
-#app{width:100%;height:100%;display:flex;flex-direction:column;gap:14px;padding:18px}
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
+  <title>打磚塊 Plus</title>
+  <link rel="stylesheet" href="./style.css" />
+</head>
+<body>
+  <div id="app">
+    <header id="topbar">
+      <div class="brand">
+        <div class="title">打磚塊 Plus</div>
+        <!-- 取消「打磚塊Plus」下的說明文字 -->
+      </div>
 
-/* ---- Top bar ---- */
-#topbar{
-  background:linear-gradient(180deg,#0f2f55 0%, #0b2442 100%);
-  color:#e9f3ff;border-radius:18px;padding:14px 16px;
-  box-shadow:0 18px 40px rgba(0,0,0,.22);
-  display:flex;align-items:center;justify-content:space-between;gap:12px
-}
-.brand .title{font-size:20px;font-weight:900;letter-spacing:.5px}
-.brand .subtitle{font-size:12px;opacity:.9;margin-top:4px}
-.stats{display:flex;flex-wrap:wrap;gap:10px;align-items:center;justify-content:flex-end}
-.pill{
-  background:rgba(255,255,255,.12);
-  border:1px solid rgba(255,255,255,.18);
-  padding:8px 12px;border-radius:999px;
-  font-weight:800;font-size:13px;display:flex;gap:8px;align-items:center
-}
-.btn{cursor:pointer;user-select:none}
-.btn:active{transform:translateY(1px)}
-.kbd{
-  font-size:11px;padding:2px 6px;border-radius:999px;
-  background:rgba(0,0,0,.25);border:1px solid rgba(255,255,255,.15)
-}
-.danger{background:linear-gradient(180deg,#ff5470,#ff2f57);border-color:rgba(255,255,255,.25)}
+      <!-- 讓 HUD 僅兩排高 -->
+      <div class="stats">
+        <div class="statsRow">
+          <div class="pill">分數 <span id="score">0</span></div>
+          <div class="pill">生命 <span id="lives">3</span></div>
+          <div class="pill">關卡 <span id="level">1</span></div>
+          <button class="pill btn danger" id="btnRestart" aria-label="restart">重來</button>
+        </div>
 
-/* ---- Stage ---- */
-#stageWrap{
-  position:relative;flex:1;min-height:0;
-  background:linear-gradient(180deg,#17385f 0%, #0e2b4d 100%);
-  border-radius:18px;padding:12px;
-  box-shadow:0 18px 40px rgba(0,0,0,.22);
-}
-#game{
-  width:100%;height:100%;
-  display:block;border-radius:14px;
-  background:radial-gradient(circle at 30% 20%, rgba(255,255,255,.08), rgba(0,0,0,.14) 55%, rgba(0,0,0,.35) 100%);
-  border:1px solid rgba(255,255,255,.12);
-}
+        <div class="statsRow">
+          <!-- 音效和BGM合併 -->
+          <button class="pill btn" id="btnAudio" aria-label="toggle audio">音效+BGM：<span id="audioState">開</span></button>
 
-/* ---- Overlays ---- */
-.overlay{
-  position:absolute;inset:12px;
-  border-radius:14px;
-  display:none;align-items:center;justify-content:center;
-  flex-direction:column;gap:14px;
-  background:rgba(0,0,0,.55);
-  z-index:20;text-align:center;
-}
-.big{
-  font-weight:1000;
-  font-size:min(18vw,160px);
-  letter-spacing:2px;
-  text-shadow:0 0 14px rgba(255,255,255,.22), 0 0 40px rgba(255,255,255,.18);
-  padding:8px 18px;border-radius:16px;
-}
-.hint{color:#fff;opacity:.92;font-weight:800;font-size:min(4vw,22px);letter-spacing:1px}
+          <div class="pill">道具% <input id="powerupRate" type="number" inputmode="numeric" min="0" max="100" step="1" value="40" aria-label="powerup rate percent"/></div>
 
-/* 通關彩虹光 + 閃爍 + 震動 */
-.rainbow{
-  color:#fff;
-  filter:hue-rotate(0deg);
-  animation:rainbowHue 1.2s linear infinite, glowPulse .85s ease-in-out infinite;
-  text-shadow:
-    0 0 18px rgba(255,255,255,.35),
-    0 0 40px rgba(255,170,0,.35),
-    0 0 90px rgba(0,200,255,.25);
-}
-.gameover{
-  color:#ffebee;
-  text-shadow:
-    0 0 20px rgba(255,60,60,.35),
-    0 0 55px rgba(255,0,70,.25);
-}
-.shake{animation:shake .18s linear infinite}
-.flicker{animation:flicker 1.1s ease-in-out infinite}
-@keyframes rainbowHue{to{filter:hue-rotate(360deg)}}
-@keyframes glowPulse{0%,100%{transform:scale(1)}50%{transform:scale(1.04)}}
-@keyframes shake{0%{transform:translate(0,0)}25%{transform:translate(2px,-1px)}50%{transform:translate(-2px,1px)}75%{transform:translate(1px,2px)}100%{transform:translate(0,0)}}
-@keyframes flicker{0%,100%{opacity:1}45%{opacity:.72}55%{opacity:1}60%{opacity:.82}75%{opacity:1}}
+          <button class="pill btn" id="btnPause" aria-label="pause">暫停 <span class="kbd">P</span></button>
+        </div>
+      </div>
+    </header>
 
-/* ---- Mobile HUD ---- */
-#mobileHUD{
-  display:none;
-  gap:10px;justify-content:space-between;align-items:center;
-  background:rgba(9,33,60,.75);
-  border:1px solid rgba(255,255,255,.12);
-  border-radius:14px;padding:10px;
-  box-shadow:0 10px 22px rgba(0,0,0,.18);
-}
-.mBtn{
-  flex:1;
-  background:linear-gradient(180deg,#1c4a7f,#123a66);
-  border:1px solid rgba(255,255,255,.15);
-  color:#fff;border-radius:12px;
-  padding:10px 8px;
-  font-weight:900;
-  cursor:pointer;
-}
-.mBtn:active{transform:translateY(1px)}
-@media (pointer:coarse){
-  #mobileHUD{display:flex}
-}
+    <main id="stageWrap">
+      <canvas id="game" width="1280" height="720" aria-label="breakout game canvas"></canvas>
 
-/* ---- Help ---- */
-#help{
-  color:#0b2442;
-  font-weight:800;
-  opacity:.92;
-  padding:0 6px 8px;
-}
-.helpLine{margin-top:6px}
+      <div id="overlayClear" class="overlay" aria-hidden="true">
+        <div class="big rainbow shake flicker">通關!</div>
+        <div class="hint">按任意鍵 / 點一下進入下一關</div>
+      </div>
 
-/* ---- Inline input in pill (Powerup rate) ---- */
-.pill input{
-  width:56px;
-  background:rgba(0,0,0,.18);
-  border:1px solid rgba(255,255,255,.18);
-  color:#e9f3ff;
-  border-radius:10px;
-  padding:4px 6px;
-  font-weight:900;
-  outline:none;
-  text-align:center;
-}
-.pill input::-webkit-outer-spin-button,
-.pill input::-webkit-inner-spin-button{ -webkit-appearance: none; margin: 0; }
-.pill input[type=number]{ -moz-appearance: textfield; }
+      <div id="overlayGameOver" class="overlay" aria-hidden="true">
+        <div class="big gameover shake flicker">GAME OVER</div>
+        <div class="hint">按任意鍵 / 點一下重新開始</div>
+      </div>
+    </main>
+
+    <section id="mobileHUD" aria-label="mobile controls">
+      <button class="mBtn" id="mLeft">← 左</button>
+      <button class="mBtn" id="mLaunch">發射 / 開始</button>
+      <button class="mBtn" id="mRight">右 →</button>
+      <button class="mBtn" id="mLaser">射擊</button>
+      <button class="mBtn" id="mFaster">加速</button>
+      <button class="mBtn" id="mSlower">減速</button>
+    </section>
+
+    <!-- 刪除控制列下方的說明文字（整段 footer 拿掉） -->
+  </div>
+
+  <script src="./game.js" defer></script>
+</body>
+</html>
