@@ -8,10 +8,11 @@
   const elScore = document.getElementById('score');
   const elLives = document.getElementById('lives');
   const elLevel = document.getElementById('level');
-  const btnSound = document.getElementById('btnSound');
-  const soundState = document.getElementById('soundState');
-  const btnBgm = document.getElementById('btnBgm');
-  const bgmState = document.getElementById('bgmState');
+
+  // NEW UI: merged audio button
+  const btnAudio = document.getElementById('btnAudio');
+  const audioState = document.getElementById('audioState');
+
   const powerupRateInput = document.getElementById('powerupRate');
   const btnPause = document.getElementById('btnPause');
   const btnRestart = document.getElementById('btnRestart');
@@ -62,6 +63,8 @@
   let masterGain = null;
   let bgmGain = null;
   let sfxGain = null;
+
+  // NOTE: keep both vars, but now toggled together by one button
   let audioEnabled = true;
   let bgmEnabled = true;
   let bgmRunning = false;
@@ -159,11 +162,10 @@
     playTone(midiToFreq(108), 0.030, 'sine', 0.06);
   }
 
-  // NEW: multi-ball immediate special SFX (only for multi)
+  // multi-ball immediate special SFX (only for multi)
   function sfxMulti() {
     if (!audioEnabled) return;
     ensureAudio();
-    // short uplifting sparkle (no change to other SFX)
     playTone(midiToFreq(88), 0.06, 'sine', 0.10);
     playTone(midiToFreq(95), 0.06, 'triangle', 0.10);
     playTone(midiToFreq(102), 0.08, 'sine', 0.08);
@@ -181,7 +183,8 @@
 
     const chordRoots = [0, 5, 7, 9]; // C F G Am
     bgmTimer = setInterval(() => {
-      if (!bgmRunning || !audioEnabled || !audioCtx) return;
+      // IMPORTANT: also stop producing if bgm was toggled off
+      if (!bgmRunning || !audioEnabled || !bgmEnabled || !audioCtx) return;
 
       const t0 = audioCtx.currentTime;
       // soft kick (noise + sine)
@@ -242,19 +245,15 @@
     if (bgmTimer) { clearInterval(bgmTimer); bgmTimer = null; }
   }
 
-  function setSoundEnabled(on) {
+  // NEW: merged toggle (sound + bgm together)
+  function setAllAudioEnabled(on) {
     audioEnabled = on;
-    soundState.textContent = on ? '開' : '關';
-    if (!on) stopBGM();
-  }
-
-  function setBgmEnabled(on){
     bgmEnabled = on;
-    if (bgmState) bgmState.textContent = on ? '開' : '關';
+    if (audioState) audioState.textContent = on ? '開' : '關';
+
+    // requirement: off => music fully off
     if (!on) stopBGM();
-    else {
-      if (audioEnabled && audioCtx && audioCtx.state !== 'suspended') startBGM();
-    }
+    else userGestureAudioStart();
   }
 
   // Always allow user gesture to start audio (not once-only)
@@ -262,20 +261,19 @@
     if (!audioEnabled) return;
     ensureAudio();
     if (audioCtx.state === 'suspended') audioCtx.resume();
-    startBGM();
+    if (bgmEnabled) startBGM();
   }
   window.addEventListener('pointerdown', userGestureAudioStart, { passive: true });
   window.addEventListener('keydown', userGestureAudioStart);
 
-  // FIX: separate listeners (avoid nesting bug)
-  btnSound.addEventListener('click', () => {
-    setSoundEnabled(!audioEnabled);
-    if (audioEnabled) userGestureAudioStart();
-  });
-  btnBgm && btnBgm.addEventListener('click', () => {
-    setBgmEnabled(!bgmEnabled);
-    if (bgmEnabled) userGestureAudioStart();
-  });
+  // Bind merged audio button
+  if (btnAudio) {
+    btnAudio.addEventListener('click', () => {
+      // if either is off, treat as off
+      const on = !(audioEnabled && bgmEnabled);
+      setAllAudioEnabled(on);
+    });
+  }
 
   // Powerup drop rate input (percent)
   if (powerupRateInput) {
@@ -288,7 +286,9 @@
     powerupRateInput.addEventListener('change', sync);
     powerupRateInput.addEventListener('input', sync);
   }
-  if (bgmState) bgmState.textContent = bgmEnabled ? '開' : '關';
+
+  // Init audio state label
+  if (audioState) audioState.textContent = (audioEnabled && bgmEnabled) ? '開' : '關';
 
   // ========= Input =========
   const keys = new Set();
@@ -483,7 +483,7 @@
     return happySet.has(n);
   }
 
-  // NEW: center bricks mask horizontally (keep shapes, always centered)
+  // center bricks mask horizontally (keep shapes, always centered)
   function centerMaskHoriz(mask, cols, rows) {
     let minX = 1e9, maxX = -1e9;
     for (let y = 0; y < rows; y++) {
@@ -600,7 +600,7 @@
           }
         }
 
-        // bridge across center gap (keep idea, slightly tighter to reduce skew)
+        // bridge across center gap
         for (let x = Math.floor(cx) - 1; x <= Math.ceil(cx) + 1; x++) mask[yA][x] = 1;
 
       } else if (styleIdx === 2) {
@@ -717,7 +717,7 @@
       }
     }
 
-    // NEW: always center mask (prevents big blank on one side)
+    // always center mask (prevents big blank on one side)
     centerMaskHoriz(mask, cols, rows);
 
     // Convert mask to bricks
@@ -795,7 +795,7 @@
     lives = 3;
     startLevel(1);
     updateHUD();
-    if (audioEnabled) startBGM();
+    if (audioEnabled && bgmEnabled) startBGM();
   }
 
   // ========= Launch / Pause / Overlays =========
@@ -810,11 +810,12 @@
     balls[0].vy = Math.sin(angle) * sp;
   }
 
+  // Single binding (avoid double-trigger)
   btnPause.addEventListener('click', () => {
     userGestureAudioStart();
     paused = !paused;
   });
-  btnRestart.addEventListener('click', () => restartGame());
+  btnRestart.addEventListener('click', () => { userGestureAudioStart(); restartGame(); });
 
   window.addEventListener('keydown', (e) => {
     const k = e.key.toLowerCase();
@@ -836,7 +837,6 @@
     state = 'CLEAR';
     paused = true;
     showOverlayClear(true);
-    // requirement: win sound (keep existing clear SFX)
     sfxClear();
     spawnClearFX();
   }
@@ -965,8 +965,7 @@
   }
 
   function update(dt) {
-    // Paddle speed sync with ball speed (requirement #4)
-    // Use same multiplier that drives ball speed; clamp for control
+    // Paddle speed sync with ball speed
     const speedScale = clamp((1 + speedRamp + speedBias) * slowFactor, 0.65, 2.2);
     paddle.speed = paddleBaseSpeed * speedScale;
 
@@ -1060,7 +1059,6 @@
           if (b.hp <= 0) {
             remainingBreakable--;
             spawnParticles(b.x + b.w/2, b.y + b.h/2, 12);
-            // NEW rule: multi immediate, others drop physical
             spawnPowerup(b.x + b.w/2, b.y + b.h/2);
           }
           break;
@@ -1221,7 +1219,6 @@
       let col = 'rgba(255,209,102,0.95)';
       if (p.type === 'life') col = 'rgba(255,84,112,0.95)';
       if (p.type === 'slow') col = 'rgba(160,230,120,0.95)';
-      // multi never spawns physically now
       ctx.fillStyle = col;
       drawRoundedRect(-14, -10, 28, 20, 9);
       ctx.fill();
@@ -1289,7 +1286,6 @@
   }
 
   // ========= Control buttons mapping =========
-  btnRestart.addEventListener('click', () => { userGestureAudioStart(); restartGame(); });
   mLaunch.addEventListener('click', () => {
     if (state === 'CLEAR') advanceLevel();
     else if (state === 'GAMEOVER') restartGame();
@@ -1300,15 +1296,8 @@
   function updateHUDSafe() { updateHUD(); }
   updateHUDSafe();
 
-  function showOverlayClearSafe(on){ showOverlayClear(on); }
-  function showOverlayGameOverSafe(on){ showOverlayGameOver(on); }
-
   // Start at level 1
   startLevel(1);
-
-  if (audioEnabled) {
-    soundState.textContent = '開';
-  }
 
   requestAnimationFrame(step);
 })();
