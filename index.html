@@ -1,3 +1,4 @@
+<!-- index.html -->
 <!doctype html>
 <html lang="zh-Hant">
 <head>
@@ -11,11 +12,11 @@
     <header id="topbar">
       <div class="brand">
         <div class="title">打磚塊 Plus</div>
-        <!-- 取消「打磚塊Plus」下的說明文字 -->
+        <!-- 取消副標說明文字 -->
       </div>
 
-      <!-- 讓 HUD 僅兩排高 -->
-      <div class="stats">
+      <!-- HUD 固定兩排 -->
+      <div class="stats" aria-label="HUD">
         <div class="statsRow">
           <div class="pill">分數 <span id="score">0</span></div>
           <div class="pill">生命 <span id="lives">3</span></div>
@@ -24,10 +25,12 @@
         </div>
 
         <div class="statsRow">
-          <!-- 音效和BGM合併 -->
+          <!-- 音效+BGM 合併 -->
           <button class="pill btn" id="btnAudio" aria-label="toggle audio">音效+BGM：<span id="audioState">開</span></button>
 
-          <div class="pill">道具% <input id="powerupRate" type="number" inputmode="numeric" min="0" max="100" step="1" value="40" aria-label="powerup rate percent"/></div>
+          <div class="pill">
+            道具% <input id="powerupRate" type="number" inputmode="numeric" min="0" max="100" step="1" value="40" aria-label="powerup rate percent"/>
+          </div>
 
           <button class="pill btn" id="btnPause" aria-label="pause">暫停 <span class="kbd">P</span></button>
         </div>
@@ -57,10 +60,9 @@
       <button class="mBtn" id="mSlower">減速</button>
     </section>
 
-    <!-- 刪除控制列下方的說明文字（整段 footer 拿掉） -->
+    <!-- 刪除控制列下方的說明文字（footer 整段移除） -->
   </div>
 
   <script src="./game.js" defer></script>
 </body>
 </html>
-
